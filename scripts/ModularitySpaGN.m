@@ -1,4 +1,4 @@
-function [ModularitySpa,ModularityGN,DeterrenceFct]=ModularitySpaGN(Flow,Dist,N,binsize);
+function [ModularitySpa,ModularityGN,DeterrenceFct,nullmodelSpa]=ModularitySpaGN(Flow,Dist,N,binsize);
     % Flow: Adjacency matrix
     % Dist: Distance matrix between the nodes
     % N: a measure of the importance of a node (by default its strength: Dist=sum(Flow,1); for example)
