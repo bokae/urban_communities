@@ -473,6 +473,7 @@ network_df = pd.merge(network_df, city_sum_df, how = 'left', on = ['city','algor
 network_df = pd.merge(network_df, city_std_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
 
 
+print(network_df.head())
 
 
 
@@ -480,25 +481,24 @@ network_df = pd.merge(network_df, city_std_df, how = 'left', on = ['city','algor
 
 
 
+# df = pd.read_csv(....)
 
-df = pd.read_csv(....)
-
-def
-"""
-"""
-    df = ...
+# def
+# """
+# """
+#     df = ...
 
 
-ydf
+# ydf
 
-def
+# def
 
-    df.groupby()
+#     df.groupby()
 
     
 
 
-import functions as f
+# import functions as f
     
-f.functionname()
+# f.functionname()
 
