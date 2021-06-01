@@ -1,7 +1,7 @@
         ## !!! Difference from previous notebooks: community labels (which are calculated from several runs, so they are consensus communities) are named 'S' INSTEAD OF 'S_cons' as it is shorter
 
 
-# 0.) IMPORT
+# 0.) IMPORT PACKAGES
 
 import pandas as pd
 import geopandas as gpd
@@ -10,6 +10,7 @@ import json
 import numpy as np
 import scipy
 
+from itertools import product
 
 
 # 1.) IMPORT DATA
@@ -47,23 +48,17 @@ census_2 = pd.read_csv("../data/censusdata_top50_2017.csv")
 
 
 
-# 2.) PREPARE DATA
+# 2.) FUNCTIONS
 
-# 2.1.) create tract geoids
+# 2.1.) data preparation - create tract geoids
 def create_geoid(row):
     state = str(int(row["state"])).zfill(2)
     county = str(int(row["county"])).zfill(3)
     tract = str(int(row["tract"])).zfill(6)
     return "14000US" +state+county+tract
 
-census['geoid'] = census.apply(create_geoid,axis=1)
-census_2['geoid'] = census_2.apply(create_geoid,axis=1)
 
-# 2.2.) list of city names
-city_l = list(cbsacode['clean_name'].unique())
-
-
-# 3.) AUXILIARY FUNCTION
+# 2.2.) auxiliary function
 
 ###### START HERE, CHECK
 
@@ -154,7 +149,8 @@ def create_graph(city, g_type): ### ATIRTAM KICSIT, ELLENORIZNI
 #### END HERE CHECK
 
 
-# 4.) NETWORK CALCULATIONS
+# 2.3.) Functions calculating network properties other than modalurity
+# 2.3.1) degree and degreecentrality
 
 
 # TODO ÁTSZÁMOZNI
@@ -170,20 +166,19 @@ def degree_degreecent_dict(city, g_type):
     return degree_dict, degreecent_dict
 
 
-# 4. --------) Density
+# 2.3.2. density
 # TODO
 
 
 
-# 4.1.) Modularity calculations
+# 2.4.) Modularity calculations
 ## Ms/Mgn - deterrence function nem, mik ezek???? KERDES?
 # calculations based on Newman-Girvan modularity (standard) and Expert modularity (spatially corrected: null model account for the fact that the closer two places to each other the more connection is expected between them)
 
-# 4.1.1.) Calculation preparation --> ??? deterrence funtion matrix for each network for both methods ???
 
-
+# 2.4.1.) Modularity calculation - matrices for clustering for both algorithm_type-s (1 iteration)
 ### START HERE
-# copied from Spatial_modularity_pooled notebook
+# (((copied from Spatial_community_pooled notebook)))
 def SpaMod(A,D,N,binnumber): # binnumber instead of b = binsize
     """
     Function that calculates the matrix for the clustering 
@@ -208,10 +203,7 @@ def SpaMod(A,D,N,binnumber): # binnumber instead of b = binsize
     ModularitySpa : 
     ModularityGN :
     """
-    
-    #tic = time()
-    
-    #print("Beginning of modularity function...");   
+     
     # felesleges?? KERDES -- symmetrised matrix (doesn't change the outcome of community detection (arXiv:0812.1770))
     A = A + A.T ### KERDES KELL-e?? TODO ATGONDOLNI? ILLETVE LE KELL-e osztani 2-vel   / 2     
     b = D.max()/(binnumber-1) # MODIFIED
@@ -232,23 +224,10 @@ def SpaMod(A,D,N,binnumber): # binnumber instead of b = binsize
     det = det / normadet
     det[np.isnan(det)] = 0
     
-    #toc = time()
-    #print("Done.","%.2f" % (toc-tic))
-    
-    #tic = toc
-    
-    #print("Null modell...")
-    
+        
     # copmutation of the randomised correlations (preserving space), spatial
     # null-model
     nullmodelSpa = det[np.digitize(D,detbins,right=True)-1]
-    
-    #toc = time()
-    #print("Done.","%.2f" % (toc-tic))
-    
-    #tic = toc
-    
-    #print("Modularity calc...")
     
     # the modularity matrix for the spatial null-model
     ModularitySpa=A-np.multiply(N*N.T, nullmodelSpa*A.sum())/(np.multiply(N*N.T,nullmodelSpa).sum())
@@ -259,10 +238,7 @@ def SpaMod(A,D,N,binnumber): # binnumber instead of b = binsize
     degree = degree = A.sum(axis=0) # JAVITVA np.squeeze(np.asarray(A.sum(axis=0))) # degree or strength of nodes || asarry for further usage
     nullmodelGN = degree.T*degree/degree.sum() # Newman-Girvan null-model
     ModularityGN = A - nullmodelGN
-    
-    #toc = time()
-    #print("Done.","%.2f" % (toc-tic))
-    
+       
     return ModularitySpa, ModularityGN # KERDES UTOLAG: EZ AZT ADJA MEG, HOGY ADOTT KÉT CSÚCS KÖZÖTT MENNYIVEL TÖBB ÉL VAN A VÁRTNÁL??
 # KERDES FOLYT.: EGY KLASZTEREZÉS MODULARITÁSÁT ÚGY KAPOM MEG EBBŐL, HOGY ÖSSZEADOM AZON ELEMEIT, AMIK MINDKÉT CSÚCSA UGYANAHHOZ A COMMUNITYHEZ TARTOZIK, MAJD EOLSZTOM 2M-MEL (2*m = 2-szer total weight of the network = 2*szum(A)/2 = szum(A)
 
@@ -271,8 +247,8 @@ def SpaMod(A,D,N,binnumber): # binnumber instead of b = binsize
 
 
 # CHECK START HERE - from Spatial_community_pooled
-
-# CONSENSUS CLUSTERING
+# 2.4.2.
+# Consensus clustering
 def consen(city, algorithm_type, g_type):
     """
     Function that does the consensus clustering based on the results
@@ -298,7 +274,7 @@ def consen(city, algorithm_type, g_type):
     """
     
     # Reading in necessary data
-    csv = '../data/consensus_' + city + '_' + algorithm_type + '_' + g_type + '.csv'
+    csv = '../data/com_detect_iters_' + city + '_' + algorithm_type + '_' + g_type + '.csv'
 
     # results of multiple iterations from previous runs
     iters = pd.read_csv(csv)
@@ -350,55 +326,8 @@ def consen(city, algorithm_type, g_type):
 # END HERE CHECK__________________________________
 
 
-# Create tract_df
 
-0531 ITT TARTOK
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## KERDES, HIBA
-
-# INNEN
-
-# HIBAS AZ ADATBAZIS --> vannak benne duplikátumok
-algorithm_type = 'ms'
-g_type = 'mob'
-len(list(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid'])) - len(set(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid']))
-
-# EZEKRE NEM FUT LE
-# KERDES Ezekre miert nem mukodik?
-city_l.remove('providence')
-city_l.remove('san_jose')
-city_l.remove('austin')
-city_l.remove('san_francisco')
-city_l.remove('washington')
-city_l.remove('san_antonio')
-city_l.remove('riverside')
-city_l.remove('boston')
-city_l.remove('baltimore')
-city_l.remove('san_diego')
-city_l.remove('los_angeles')
-
-# EDDIG
-
-
-# 4.1.2.) Modularity contribution of communities to the overall modularity of networks
+# 2.4.3.) Modularity contribution of communities to the overall modularity of networks
 
 ### TODO: MODULARITY CONTRIBUTION NEM MÉRETFÜGGŐ?
 
@@ -466,63 +395,189 @@ def community_modularity(city, g_type):
 
 
 
+# 3.) CALCULATIONS USING THE FUNCTIONS AND DATA ABOVE
+
+# 3.1.) Create geoids on census dataframe
+census['geoid'] = census.apply(create_geoid,axis=1)
+census_2['geoid'] = census_2.apply(create_geoid,axis=1)
+
+# 3.2.) Make list of city names
+city_l = list(cbsacode['clean_name'].unique())
+
+# 3.3.) RUN AND STORE RESULTS OF 20 ITERATIONS OF COMMUNITY DETECTIONS
+
+# (copied from spatial_community_pooled.ipynb, some comments deleted)
+def community_detection_iters(): 
+
+    tract_outdeg_mob = mobility.groupby('tract_home')[['cnt']].sum()
+
+    for city in city_l:
+        for g_type in ['mob','fol_hh']:
+            G = create_graphs(city, g_type) # corresponding weighted undirected graph
+            
+            # index conversion dicts
+            # geoid -> integer 0-... N-1
+            # int -> geoid
+            index_geoid_dict = dict(list(enumerate(G.nodes)))
+            geoid_index_dict = dict(zip(list(index_geoid_dict.values()), list(index_geoid_dict.keys())))
+
+            
+            # Dataprep for Expert algorithm
+            A = nx.adjacency_matrix(G)
+            coords = np.array([tract_center_dict[n] for n in G.nodes()])
+            d = pdist(coords)
+            D = squareform(pdist(coords))
+            
+            # importance - number of user home in each tract
+            # ((TODO we should)) check if all nodes in the follow_hh graph have an importance!
+            # otherwise, the N... line is going to throw an error
+            if not set(G.nodes).issubset(set(tract_outdeg_mob.reset_index().tract_home)): # test if the node is in any city ((KERDES : adott városra teszteljem?))
+                print('Error. Node(s) without importance value(s) They are dropped.') #((# --> DONE))
+                missing_nodes = list(set(G.nodes)-set(tract_outdeg_mob.reset_index().tract_home))
+                for node in missing_nodes:
+                    #((# KERDES - ezt ki is dobjam??))
+                    G.remove_node(node)    
+            N = np.matrix([tract_outdeg_mob.loc[k].iloc[0] for k in G.nodes()]).T
+            
+            
+            # Calculate clusterings for the given graph and write the outcome of runs to csvs
+            S_ms_df = pd.DataFrame()
+            S_mgn_df = pd.DataFrame()
+            for _ in range(10):
+                # TODO Eszter!!!! sometimes it gives an error in the first line
+                Ms,Mgn = SpaMod(A,D,N,200) #((## KERDES what should be the number of bins? 100?))
+                S_ms,Q_ms,n_it_ms = octave.iterated_genlouvain(Ms, nout=3)
+                S_ms_df[len(S_ms_df.columns)] = S_ms.T[0]
+                S_mgn,Q_mgn,n_it_mgn = octave.iterated_genlouvain(Mgn, nout=3)
+                S_mgn_df[len(S_mgn_df.columns)] = S_mgn.T[0]
+
+                for (algorithm_type, df) in [('ms',S_ms_df),('mgn',S_mgn_df)]:
+                    df['geoid'] = df.index.map(index_geoid_dict)
+                    # ((TODO --> DONE  S_df["geoid"] = S_df.index.map(a_masodik_dicted) -- kérdés: ez mit tud, amit az alatta levő sor nem?))
+                    # ((S_df['geoid'] = list(G.nodes()) ## KERDES JO??? - szerintem igen (Eszter)))
+                    df = df.set_index('geoid')
+                    csv_name = 'com_detect_iters_' + city + '_' + algorithm_type + '_' + g_type + '.csv'
+                    df.to_csv('../data/'+ csv_name)
 
 
-################## CREATE COMMUNITY_DF
+# 3.4.) CALCULATE CONSENSUS CLUSTERING
 
-# 6.) COMMUNITY LEVEL DATAFRAME
+def consen_calc():
 
-# creating the dataframe
+    city_alg_gtype_combs = = product(city_l, ['mob','fol_hh'], ['ms','mgn'])
 
-# TODO PUT degree, degreecent and modularity into the tract_df
+    for city, algorithm_type, g_type in city_alg_gtype_combs:
+            
+            # storing iteration results, empty dataframe for nodes
+            consensus_df = pd.DataFrame()
+            
+            S_cons = consen(city, algorithm_type, g_type)
+            consensus_df['S'] = S_cons.values()
+            consensus_df['city'] = city
+            consensus_df['algorithm_type'] = algorithm_type
+            consensus_df['g_type'] = g_type
+            consensus_df['geoid'] = S_cons.keys()
+            consensus_df = consensus_df.set_index('geoid')
+            # TODO talán: COUNTY ÉS NMI IDE MAJD
+
+            all_consensus_df = pd.concat([all_consensus_df, consensus_df])
+
+    all_consensus_df.to_csv('../data/consensus_clust.csv')
+
+
+
+
+# CREATE tract_df
+# ITT TARTOK 0601
+
+
+
+# 3.5.) CREATE tract_df AND ADD NETWORK PROPERTIES TO THE DATASET
+
+tract_df = pd.read_csv('../data/consensus_clust.csv')
+# TODO ADD degree, degreecent to the tract_df
+
+# 3.6.) community_df
+
+# 3.6.1.) CREATE community_df
 community_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['degree', 'degreecent'].mean().reset_index()
 community_df = community_df.rename(columns = {'degree' : 'degree_avg', 'degreecent' : 'degreecent_avg'})
 
-# number of tracts or numer of users in it?? KERDES
+# 3.6.2.) ADD CALCULATED VARIABLES TO community_df
+
+# 3.6.2.2.) TRACT COUNT PER COMMUNITY
+# number of tracts or number of users in it?? KERDES 0601 is fontos
 # sum 'ones' or sum 'cnt'
 community_cnt_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['ones'].sum().reset_index()
+community_cnt_df = community_cnt_df.rename(columns = {'ones' : 'tract_sum'})
+
+community_df = pd.merge(community_df, community_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) # TODO LATER: ellenőrizni, hogyha inner, akkor elveszik-e belőle sor, mert nem szabadna
 
 
+# 3.6.2.3.) COMMUNITY MODAULARITY - ellenőrizni kellene HIBAS KERDESES 0601
+
+# HIBAS AZ ADATBAZIS --> vannak benne duplikátumok
+## Innen látom, hogy vannak benne duplikátumok
+### algorithm_type = 'ms'
+### g_type = 'mob'
+### len(list(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid'])) - len(set(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid']))
+
+# TODO 0601 filter
+# kitörlöm ezeket a tracteket
+
+# EZEKRE NEM FUT LE A community_modularity
+# KERDES Ezekre miert nem mukodik?
+city_l.remove('providence')
+city_l.remove('san_jose')
+city_l.remove('austin')
+city_l.remove('san_francisco')
+city_l.remove('washington')
+city_l.remove('san_antonio')
+city_l.remove('riverside')
+city_l.remove('boston')
+city_l.remove('baltimore')
+city_l.remove('san_diego')
+city_l.remove('los_angeles')
 
 
-
-
-
-
-# KERDES EZT HOGYAN??
 com_mod_df = pd.DataFrame()
+graph_combs = product(city_l, ['mob','fol_hh'])
+
 for city, g_type in graph_combs:
-    print(city)
-    print(g_type)
     df = community_modularity(city, g_type)
     com_mod_df = pd.concat([com_mod_df, df])
-# TODO ADD TO COM_DF
-community_df = pd.merge(community_df, com_mod_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) ## TODO megnézni, hogy hány sora marad, ha nem left, hanem inner, jó-e ez a merge
+community_df = pd.merge(community_df, com_mod_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) ## TODO ELLENORZES megnézni, hogy hány sora marad, ha nem left, hanem inner, jó-e ez a merge
 
     
-# 4.1.3.) Modularity of networks    
+# 3.7.) network_df
 
-modularity_df = deepcopy(com_mod_df.groupby(['city', 'algorithm_type', 'g_type'])[['modularity_S']].sum().reset_index())
-modularity_df = modularity_df.rename(columns = {'modularity_S' : 'modularity'})
+# 3.7.1.) MODULARITY CALCULATIONS
+# 3.7.1.1.) CREATE network_df WITH OVERALL NETWORK MODULARITY
 
-# check this TODO
-network_df = pd.merge(network_df, modularity_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) ### KERDES Mindig left merget kell csinálni? Ellenőrizni kell az üres értékeket?
+network_df = deepcopy(com_mod_df.groupby(['city', 'algorithm_type', 'g_type'])[['modularity_S']].sum().reset_index())
+network_df = network_df.rename(columns = {'modularity_S' : 'modularity'})
 
-# calculate modularity contribution = mod_community/mod_network
-community_df = pd.merge(community_df, modularity_df, how = 'left', on = ['city', 'algorithm_type', 'g_type'])
-commnity_df['mod_S_p'] = community_df['modularity_S'] / community_df['modularity']
-    
-    
-    
-# 4.1.4.) Community quality ?? (community's contribution to modularity of network / modularity of network)
+# 3.7.1.2.) CALCULATE MODULARITY CONTRIBUTION AND ADD IT TO community_df
+# modularity contribution = mod_community/mod_network
+community_df = pd.merge(community_df, network_df, how = 'left', on = ['city', 'algorithm_type', 'g_type'])
+community_df['mod_S_p'] = community_df['modularity_S'] / community_df['modularity']
 
-# TODO IDERAKNI
+# 3.7.2.) ADD NUMBER OF TRACT IN NETWORK AND IN CITY TO network_df
+
+# number of tracts in network
+network_df = pd.merge(network_df, community_cnt_df.groupby(['city', 'algorithm_type', 'g_type'])[['tract_sum']].sum().reset_index(), how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenorizni, hogyha inner lenne left helyett, akkor elveszne-e sor, mert nem szabadna
+
+# number of tracts in city
+city_cnt_df = deepcopy(cbsacode.groupby(['clean_name'])['short_name'].count().reset_index())
+city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})  
+network_df = pd.merge(network_df, city_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
 
 
+# 3.7.1.3.) TODO talán később -- Community quality - RANK BASED ON mod_S_p 
+# IDERAKNI
 
-SpaMod
 
-# 5.) CENSUS CALCULATIONS - FOR CITY NOT FOR NETWORK!!!!!!
+# 4.) CENSUS CALCULATIONS - FOR CITY NOT FOR NETWORK!!!!!!
 
 # NINCS PRÓBÁLVA ettől lejjebb
 # censusok összerakni, _1 és _2 -t rárakni
@@ -544,12 +599,6 @@ tract_df['income_pct'] = tract_df.apply(lambda row: scipy.stats.percentileofscor
 network_df['income_pct'] = network_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], row['income_1']))
 
 
-'S'
-# TODO EZELŐTT MÁG DEGREE, MODAULARITY ÉS SZÁMLÁLÓ OSZOP IS KELL
-
-
-
-
 
 # elnevezes:
 ### TODO S_CONS HELYETT S, S HELYETT S_NONCONS
@@ -567,7 +616,7 @@ city_sum_df = city_sum_df.rename(columns = {'population_1' : 'population_sum_1',
 city_std_df = tract_df.groupby(['city','algorithm_type','g_type'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].std().reset_index()
 city_std_df = city_std_df.rename(columns = {'population_1' : 'population_std_1', 'income_1' : 'income_std_1', 'educ_ba_1' : 'educ_ba_std_1', 'white_1' : 'white_std_1', 'black_1' : 'black_std_1', 'native_1' : 'native_std_1', 'asian_1' : 'asian_std_1'})
 
-
+# TODO utólag visszanézve ezt biztosan javítani kell 0601
 community_df = pd.merge(community_df, com_sum_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
 community_df = pd.merge(community_df, com_std_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
 
@@ -575,7 +624,6 @@ network_df = pd.merge(network_df, city_sum_df, how = 'left', on = ['city','algor
 network_df = pd.merge(network_df, city_std_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
 
 
-print(network_df.head())
 
 
 
