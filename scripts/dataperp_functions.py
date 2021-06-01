@@ -270,6 +270,108 @@ def SpaMod(A,D,N,binnumber): # binnumber instead of b = binsize
 
 
 
+# CHECK START HERE - from Spatial_community_pooled
+
+# CONSENSUS CLUSTERING
+def consen(city, algorithm_type, g_type):
+    """
+    Function that does the consensus clustering based on the results
+    of multiple runs of previous algorithms. -- It makes a weighted graph with the same nodes (tracts) as the origianl clustering and edge weights are the number of iteration when the two nodes were clustered to the same community according to the input dataset. The consensus clustering is the clustering made on this new network using ordinary community detection calculating modularity a la Newman-Girvan. ??kerdes ez newman-girvan, ugye?  
+    
+    Parameters:
+    -----------
+    
+    city : str
+        cityname to run the consensus clustering for (see cbsacode.clean_name)
+    algorithm_type: str
+        either "ms" or "mgn" 
+        selects the clustering algoritm type: spatail null model (modularity calculation - a la Expert) or ordinary null model (modularity calcualted a la Girvan-Newman)
+    g_type : str
+        either "mobility" or "follow_hh"
+        selects the type of graph: commuting between home and workplace OR mutual?? followership socail ties using homelocations
+        
+    Returns:
+    --------
+    
+    s_louv : dict
+        tract_geoid -> partition label (int)
+    """
+    
+    # Reading in necessary data
+    csv = '../data/consensus_' + city + '_' + algorithm_type + '_' + g_type + '.csv'
+
+    # results of multiple iterations from previous runs
+    iters = pd.read_csv(csv)
+    iters = iters.set_index('geoid')
+    iters['clusts'] = [np.array(l) for l in iters.values.tolist()]
+
+    # create all possible node pairs
+    geoid_pairs = list(product(list(iters.index), list(iters.index)))
+    consen_df = pd.DataFrame(geoid_pairs, columns=['geoid_1','geoid_2'])
+
+    # remove selfloops
+    consen_df = consen_df[consen_df.geoid_1!=consen_df.geoid_2]
+    
+
+    # joining iteration results (community label) as lists to nodes (- KERDES: jo, utolag kommentaltam at!!!) (It is needed to b done for geoid_1 and geoid_2 as a node can be on either end of the edge???)
+    both elements of the node(=tract) pairs
+    consen_df = pd.merge(consen_df, iters['clusts'], left_on = 'geoid_1', right_on = 'geoid')
+    consen_df = pd.merge(consen_df, iters['clusts'], left_on = 'geoid_2', right_on = 'geoid')
+    consen_df = consen_df.rename(columns = {'clusts_x': 'clusts_1', 'clusts_y': 'clusts_2'})
+  
+
+    # Edge weights <-- no. of iterations when the two nodes (tracts) defining the edge are clustered to the same community
+    ## how many times are the two nodes (=tracts) (geoid_1 and geoid_2) clustered to the same community?
+    ## --> weights of a graph on which clustering gives the consensus clustering
+    
+    same_com = np.array(consen_df['clusts_2'].tolist()) == np.array(consen_df['clusts_1'].tolist())
+    del consen_df['clusts_1'], consen_df['clusts_2']
+    consen_df['w'] = same_com.sum(axis=1)
+    del same_com
+
+    #remove missing edges from edgelist (delete edges with 0 weight)
+    consen_df = deepcopy(consen_df[consen_df['w']!=0])
+    ## -------------print("Getting number of zero differences...") # HIBA: KIDOB NODE-OT!!!---------------------KERDES: Miért dob ki nodeot? 0326 JAVITAS 0531: Ez csak azt jelenti, hogy semelyik futásban nem azonos a társaság címkéjük
+    
+
+    
+    # graph for consensus clustering
+    # ((create a graph from the consen_df edgelist (nodes (tracts) are same as in the original network, but the edge weights are the number of iterations when they are given the same community label))
+    g_cons = nx.Graph() 
+    g_cons.add_weighted_edges_from(consen_df[['geoid_1','geoid_2','w']].values, weight='w')
+
+    del consen_df, iters
+
+    # Louvain community detection 
+    s_louv = community_louvain.best_partition(g_cons, weight='w')
+
+    return s_louv
+
+# END HERE CHECK__________________________________
+
+
+# Create tract_df
+
+0531 ITT TARTOK
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## KERDES, HIBA
 
 # INNEN
@@ -418,7 +520,7 @@ commnity_df['mod_S_p'] = community_df['modularity_S'] / community_df['modularity
 
 
 
-
+SpaMod
 
 # 5.) CENSUS CALCULATIONS - FOR CITY NOT FOR NETWORK!!!!!!
 
