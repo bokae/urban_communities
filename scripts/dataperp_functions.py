@@ -137,7 +137,6 @@ def create_graph(city, g_type): ### ATIRTAM KICSIT, ELLENORIZNI
         
         g = g_fol_hh
         
-    # TODO --> DONE
     # check data - if all nodes of the graph are in the tract_geom dataframe
     # e.g. in create_graph()
     # if someone's not there, that is data error, print the tract_id, and leave the node out of the graph G
@@ -427,10 +426,10 @@ def community_detection_iters():
             D = squareform(pdist(coords))
             
             # importance - number of user home in each tract
-            # ((TODO we should)) check if all nodes in the follow_hh graph have an importance!
+            # check if all nodes in the follow_hh graph have an importance!
             # otherwise, the N... line is going to throw an error
             if not set(G.nodes).issubset(set(tract_outdeg_mob.reset_index().tract_home)): # test if the node is in any city ((KERDES : adott városra teszteljem?))
-                print('Error. Node(s) without importance value(s) They are dropped.') #((# --> DONE))
+                print('Error. Node(s) without importance value(s) They are dropped.')
                 missing_nodes = list(set(G.nodes)-set(tract_outdeg_mob.reset_index().tract_home))
                 for node in missing_nodes:
                     #((# KERDES - ezt ki is dobjam??))
@@ -451,8 +450,6 @@ def community_detection_iters():
 
                 for (algorithm_type, df) in [('ms',S_ms_df),('mgn',S_mgn_df)]:
                     df['geoid'] = df.index.map(index_geoid_dict)
-                    # ((TODO --> DONE  S_df["geoid"] = S_df.index.map(a_masodik_dicted) -- kérdés: ez mit tud, amit az alatta levő sor nem?))
-                    # ((S_df['geoid'] = list(G.nodes()) ## KERDES JO??? - szerintem igen (Eszter)))
                     df = df.set_index('geoid')
                     csv_name = 'com_detect_iters_' + city + '_' + algorithm_type + '_' + g_type + '.csv'
                     df.to_csv('../data/'+ csv_name)
@@ -475,8 +472,7 @@ def consen_calc():
             consensus_df['g_type'] = g_type
             consensus_df['geoid'] = S.keys()
             consensus_df = consensus_df.set_index('geoid')
-            # TODO talán: COUNTY ÉS NMI IDE MAJD
-
+            
             all_consensus_df = pd.concat([all_consensus_df, consensus_df])
 
     all_consensus_df.to_csv('../data/consensus_clust.csv')
@@ -502,8 +498,6 @@ tract_df = pd.merge(tract_df, degree_df, how = 'left', on = ['geoid'])
 tract_df = pd.merge(tract_df, degreecent_df, how = 'left', on = ['geoid'])
 
 
-# TODO ADD degree, degreecent to the tract_df
-
 # 3.6.) community_df
 
 # 3.6.1.) CREATE community_df
@@ -514,6 +508,7 @@ community_df = community_df.rename(columns = {'degree' : 'degree_avg', 'degreece
 
 # 3.6.2.2.) TRACT COUNT PER COMMUNITY
 # number of tracts or number of users in it?? KERDES 0601 is fontos
+# 0607 ITT HAGYTAM ABBA
 # sum 'ones' or sum 'cnt'
 community_cnt_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['ones'].sum().reset_index()
 community_cnt_df = community_cnt_df.rename(columns = {'ones' : 'tract_sum'})
@@ -529,11 +524,9 @@ community_df = pd.merge(community_df, community_cnt_df, how = 'left', on = ['cit
 ### g_type = 'mob'
 ### len(list(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid'])) - len(set(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid']))
 
-# TODO 0601 filter
-# kitörlöm ezeket a tracteket
-
+"""
 # EZEKRE NEM FUT LE A community_modularity
-# KERDES Ezekre miert nem mukodik?
+--> drop_duplicate_tracts megoldja
 city_l.remove('providence')
 city_l.remove('san_jose')
 city_l.remove('austin')
@@ -545,65 +538,107 @@ city_l.remove('boston')
 city_l.remove('baltimore')
 city_l.remove('san_diego')
 city_l.remove('los_angeles')
+"""
+
+def drop_duplicate_tracts():
+    """
+    Drop tracts from tract_df.
+    It drops all but one from tracts that are present in more than one city in the dataframe, and keep the occurance with higher degree.
+    """
+    # order tract_df by degree - variables otehr than degree are only in the listing to keep the dataframe 'pretty'
+    tract_df = tract_df.sort_values(by=['city', 'algorithm_type', 'g_type', 'geoid','degree'], ascending=False)
+
+    # drop duplicates and only keep the first (highest degree) occurance
+    tract_df = tract_df.drop_duplicates(subset = ['city', 'algorithm_type', 'g_type', 'geoid'])
 
 
-com_mod_df = pd.DataFrame()
 
-for city, g_type in graph_combs:
-    df = community_modularity(city, g_type)
-    com_mod_df = pd.concat([com_mod_df, df])
-community_df = pd.merge(community_df, com_mod_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) ## TODO ELLENORZES megnézni, hogy hány sora marad, ha nem left, hanem inner, jó-e ez a merge
+def calc_community_modularity():
+    """
+    Calculate how much a community contributes to the overall network modularity and store it in community_df.
+    """
+    com_mod_df = pd.DataFrame()
+
+    for city, g_type in graph_combs:
+        df = community_modularity(city, g_type)
+        com_mod_df = pd.concat([com_mod_df, df])
+    community_df = pd.merge(community_df, com_mod_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) ## TODO ELLENORZES megnézni, hogy hány sora marad, ha nem left, hanem inner, jó-e ez a merge
 
     
 # 3.7.) network_df
 
 # 3.7.1.) MODULARITY CALCULATIONS
 # 3.7.1.1.) CREATE network_df WITH OVERALL NETWORK MODULARITY
-
-network_df = deepcopy(com_mod_df.groupby(['city', 'algorithm_type', 'g_type'])[['modularity_S']].sum().reset_index())
-network_df = network_df.rename(columns = {'modularity_S' : 'modularity'})
+def calc_modularity():
+    """
+    Calculate overall network modularity and store it in network_df.
+    """
+    network_df = deepcopy(com_mod_df.groupby(['city', 'algorithm_type', 'g_type'])[['modularity_S']].sum().reset_index())
+    network_df = network_df.rename(columns = {'modularity_S' : 'modularity'})
 
 # 3.7.1.2.) CALCULATE MODULARITY CONTRIBUTION AND ADD IT TO community_df
 # modularity contribution = mod_community/mod_network
-community_df = pd.merge(community_df, network_df, how = 'left', on = ['city', 'algorithm_type', 'g_type'])
-community_df['mod_S_p'] = community_df['modularity_S'] / community_df['modularity']
+def calc_modularity_contribution():
+    """
+    Calculate the proportion of the network modularity originating from the community and store it in community_df.
+    Modularity contribution = Modularity of the network / "modularity" of the community
+    """
+
+    community_df = pd.merge(community_df, network_df, how = 'left', on = ['city', 'algorithm_type', 'g_type'])
+    community_df['mod_S_p'] = community_df['modularity_S'] / community_df['modularity']
 
 # 3.7.1.3.) TODO talán később -- Community quality - RANK BASED ON mod_S_p 
 # IDERAKNI - félig van csak kész
 
 
 # 3.7.2.) ADD NUMBER OF TRACT IN NETWORK AND IN CITY TO network_df
+def calc_tract_number(): # TODO 0608 esetleg ide rakni a fentebbi tract számítást is!!
+    """
+    Calculate number of tracts in network and in city and store it in network_df.
+    """
+    # number of tracts in network
+    network_df = pd.merge(network_df, community_cnt_df.groupby(['city', 'algorithm_type', 'g_type'])[['tract_sum']].sum().reset_index(), how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenorizni, hogyha inner lenne left helyett, akkor elveszne-e sor, mert nem szabadna
 
-# number of tracts in network
-network_df = pd.merge(network_df, community_cnt_df.groupby(['city', 'algorithm_type', 'g_type'])[['tract_sum']].sum().reset_index(), how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenorizni, hogyha inner lenne left helyett, akkor elveszne-e sor, mert nem szabadna
-
-# number of tracts in city
-city_cnt_df = deepcopy(cbsacode.groupby(['clean_name'])['short_name'].count().reset_index())
-city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})  
-network_df = pd.merge(network_df, city_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
+    # number of tracts in city
+    city_cnt_df = deepcopy(cbsacode.groupby(['clean_name'])['short_name'].count().reset_index())
+    city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})  
+    network_df = pd.merge(network_df, city_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
 
 # 3.7.3.) ADD DENSITY TO network_df
-
-network_df['density'] = network_df.apply(lambda row: nx.density(create_graphs(row['city'], row['g_type'])))
+def calc_network_density():
+    """
+    Calculate network density and store it in network_df.
+    """
+    network_df['density'] = network_df.apply(lambda row: nx.density(create_graphs(row['city'], row['g_type'])))
 
 # 3.7.4.) SIMILARITY BETWEEN COUNTIES AND COMMUNITIES
 # Normalized Mutual Information
 ## How similar is the clustering to the county system? correlation, symmetric function
 ##  --> the higher the index the more similar the clustering to county system
 
-tract_df['county'] = tract_df['geoid'].map(lambda i: i[9:12])
+def calc_community_county_similarity():
+    """
+    Calculate Normalized Mutual Information, Adjusted Normalized Mutual Information and Adjusted Rand Index
+    which describe the similarity of county-community system, and store it in network_df.
+    The higher the index the more similar the two groupings are.
+    """
+    # get the county for all tracts
+    tract_df['county'] = tract_df['geoid'].map(lambda i: i[9:12])
 
-nmi_all_df = pd.DataFrame(columns=['city','g_type','algorithm_type','nmi_to_counties','adj_nmi_to_counties','adj_rand_to_counties'])
+    # empthy dataframe
+    nmi_all_df = pd.DataFrame(columns=['city','g_type','algorithm_type','nmi_to_counties','adj_nmi_to_counties','adj_rand_to_counties'])
 
-for city, g_type, algorithm_type in city_gtype_alg_combs:
+    # calculate every index for every community structure
+    for city, g_type, algorithm_type in city_gtype_alg_combs:
 
-    nmi_df = deepcopy(tract_df[(tract_df['city'] == city) & (tract_df['g_type'] == g_type) & (tract_df['algorithm_type'] == algorithm_type)])
-    nmi = normalized_mutual_info_score(nmi_df['county'], nmi_df['S'], average_method='arithmetic')
-    a_nmi = adjusted_mutual_info_score(nmi_df['county'], nmi_df['S'], average_method='arithmetic')
-    a_rand = adjusted_rand_score(nmi_df['county'], nmi_df['S'])
-    nmi_all_df = nmi_all_df.append({'city': city, 'g_type' : g_type, 'algorithm_type' : algorithm_type, 'nmi_to_counties' : nmi, 'adj_nmi_to_counties' : a_nmi, 'adj_rand_to_counties' : a_rand}, ignore_index=True)  
+        nmi_df = deepcopy(tract_df[(tract_df['city'] == city) & (tract_df['g_type'] == g_type) & (tract_df['algorithm_type'] == algorithm_type)])
+        nmi = normalized_mutual_info_score(nmi_df['county'], nmi_df['S'], average_method='arithmetic')
+        a_nmi = adjusted_mutual_info_score(nmi_df['county'], nmi_df['S'], average_method='arithmetic')
+        a_rand = adjusted_rand_score(nmi_df['county'], nmi_df['S'])
+        nmi_all_df = nmi_all_df.append({'city': city, 'g_type' : g_type, 'algorithm_type' : algorithm_type, 'nmi_to_counties' : nmi, 'adj_nmi_to_counties' : a_nmi, 'adj_rand_to_counties' : a_rand}, ignore_index=True)  
 
-network_df = pd.merge(network_df, nmi_all_df, how = 'left', on = ['city', 'g_type', 'algorithm_type'])
+    # merge it to network_df
+    network_df = pd.merge(network_df, nmi_all_df, how = 'left', on = ['city', 'g_type', 'algorithm_type'])
 
 
 
@@ -613,7 +648,8 @@ network_df = pd.merge(network_df, nmi_all_df, how = 'left', on = ['city', 'g_typ
 
 # NINCS PRÓBÁLVA ettől lejjebb
 # 4.1.) DROP UNNECESARRY COLUMNS AND RENAME - KERDES: ez igy ok?
- census_df = census_df.drop(columns = ['state_1', 'county_1', 'tract_1', 'population_error_1',
+def clean_census():
+    census_df = census_df.drop(columns = ['state_1', 'county_1', 'tract_1', 'population_error_1',
        'education_bachelor_error_1', 'education_total_1', 'education_total_error_1',
        'income_error_1', 'race_total_1', 'race_total_error_1',
        'white_error_1', 'black_error_1', 'native_error_1', 'asian_error_1',
@@ -622,7 +658,7 @@ network_df = pd.merge(network_df, nmi_all_df, how = 'left', on = ['city', 'g_typ
        'income_error_2', 'race_total_2', 'race_total_error_2',
        'white_error_2', 'black_error_2', 'native_error_2', 'asian_error_2'])
 
-census_df = census_df.rename(columns= {'education_bachelor_1' : 'educ_ba_1', 'education_bachelor_2' : 'educ_ba_2'})
+    census_df = census_df.rename(columns= {'education_bachelor_1' : 'educ_ba_1', 'education_bachelor_2' : 'educ_ba_2'})
 
 # 4.2.) MERGE CENSUS DATA TO tract_df
 tract_df = pd.merge(tract_df, census_df, how = 'left', on = ['geoid'])
@@ -631,23 +667,29 @@ tract_df = pd.merge(tract_df, census_df, how = 'left', on = ['geoid'])
 ### elnevezes S_CONS HELYETT S, S HELYETT S_NONCONS
 
 # 4.3.) ADD SUM and STD OF CENSUS DATA TO network_df AND community_df
-com_sum_df = tract_df.groupby(['city','algorithm_type','g_type','S'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].sum().reset_index()
-com_sum_df = com_sum_df.rename(columns = {'population_1' : 'population_sum_1', 'income_1' : 'income_sum_1', 'educ_ba_1' : 'educ_ba_sum_1', 'white_1' : 'white_sum_1', 'black_1' : 'black_sum_1', 'native_1' : 'native_sum_1', 'asian_1' : 'asian_sum_1'})
+def calc_sum_and_std():
+    """
+    Calculate the sum and standard error of tract level socioeconomic data (census) for community and network level
+    and store it in community_df and network_df.
+    """
 
-com_std_df = tract_df.groupby(['city','algorithm_type','g_type','S'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].std().reset_index()
-com_std_df = com_std_df.rename(columns = {'population_1' : 'population_std_1', 'income_1' : 'income_std_1', 'educ_ba_1' : 'educ_ba_std_1', 'white_1' : 'white_std_1', 'black_1' : 'black_std_1', 'native_1' : 'native_std_1', 'asian_1' : 'asian_std_1'})
+    com_sum_df = tract_df.groupby(['city','algorithm_type','g_type','S'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].sum().reset_index()
+    com_sum_df = com_sum_df.rename(columns = {'population_1' : 'population_sum_1', 'income_1' : 'income_sum_1', 'educ_ba_1' : 'educ_ba_sum_1', 'white_1' : 'white_sum_1', 'black_1' : 'black_sum_1', 'native_1' : 'native_sum_1', 'asian_1' : 'asian_sum_1'})
 
-network_sum_df = tract_df.groupby(['city','algorithm_type','g_type'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].sum().reset_index()
-network_sum_df = network_sum_df.rename(columns = {'population_1' : 'population_sum_1', 'income_1' : 'income_sum_1', 'educ_ba_1' : 'educ_ba_sum_1', 'white_1' : 'white_sum_1', 'black_1' : 'black_sum_1', 'native_1' : 'native_sum_1', 'asian_1' : 'asian_sum_1'})
+    com_std_df = tract_df.groupby(['city','algorithm_type','g_type','S'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].std().reset_index()
+    com_std_df = com_std_df.rename(columns = {'population_1' : 'population_std_1', 'income_1' : 'income_std_1', 'educ_ba_1' : 'educ_ba_std_1', 'white_1' : 'white_std_1', 'black_1' : 'black_std_1', 'native_1' : 'native_std_1', 'asian_1' : 'asian_std_1'})
 
-network_std_df = tract_df.groupby(['city','algorithm_type','g_type'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].std().reset_index()
-network_std_df = network_std_df.rename(columns = {'population_1' : 'population_std_1', 'income_1' : 'income_std_1', 'educ_ba_1' : 'educ_ba_std_1', 'white_1' : 'white_std_1', 'black_1' : 'black_std_1', 'native_1' : 'native_std_1', 'asian_1' : 'asian_std_1'})
+    network_sum_df = tract_df.groupby(['city','algorithm_type','g_type'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].sum().reset_index()
+    network_sum_df = network_sum_df.rename(columns = {'population_1' : 'population_sum_1', 'income_1' : 'income_sum_1', 'educ_ba_1' : 'educ_ba_sum_1', 'white_1' : 'white_sum_1', 'black_1' : 'black_sum_1', 'native_1' : 'native_sum_1', 'asian_1' : 'asian_sum_1'})
 
-community_df = pd.merge(community_df, com_sum_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
-community_df = pd.merge(community_df, com_std_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
+    network_std_df = tract_df.groupby(['city','algorithm_type','g_type'])['population_1', 'income_1', 'educ_ba_1', 'white_1', 'black_1', 'native_1', 'asian_1'].std().reset_index()
+    network_std_df = network_std_df.rename(columns = {'population_1' : 'population_std_1', 'income_1' : 'income_std_1', 'educ_ba_1' : 'educ_ba_std_1', 'white_1' : 'white_std_1', 'black_1' : 'black_std_1', 'native_1' : 'native_std_1', 'asian_1' : 'asian_std_1'})
 
-network_df = pd.merge(network_df, network_sum_df, how = 'left', on = ['city','algorithm_type','g_type'])
-network_df = pd.merge(network_df, network_std_df, how = 'left', on = ['city','algorithm_type','g_type'])
+    community_df = pd.merge(community_df, com_sum_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
+    community_df = pd.merge(community_df, com_std_df, how = 'left', on = ['city','algorithm_type','g_type','S'])
+
+    network_df = pd.merge(network_df, network_sum_df, how = 'left', on = ['city','algorithm_type','g_type'])
+    network_df = pd.merge(network_df, network_std_df, how = 'left', on = ['city','algorithm_type','g_type'])
 
 # 4.2.) INCOME PERCENTILE
 #### scipy.stats.percentileofscore(array, score) - gives back the percentil of score
@@ -666,16 +708,24 @@ community_df['income_pct'] = community_df.apply(lambda row: scipy.stats.percenti
 
 # 4.3.) CREATE POOR TRACT DUMMIES - poor tracts are those with less than 50% of the median tract income in the given city
 
-network_med_df = deepcopy(tract_df.groupby(['city','algorithm_type','g_type']))[
-    'income_1'
-    ].median().reset_index()
-network_med_df = network_med_df.rename(columns = {'income_1' : 'income_med_1'})  
+def create_poor_dummy():
+    """
+    Create a poor dummy which takes the value 1 when the tract's income is lower than 50% of the median tract income in the network,
+    and takes 0 otherwise. It is stored in tract_df.
+    """
 
-# relative poverty line - 50% of city's median income
-network_med_df['rel_poverty_line_1'] = network_med_df['income_med_1'] / 2
-tract_df = pd.merge(tract_df, network_med_df, how = 'left', on = ['city','algorithm_type','g_type'])
-# dummy for poor tracts
-tract_df['poor_1'] = (tract_df['income_1'] < tract_df['rel_poverty_line_1']).astype('int')
+    # calculate median income in of each networks
+    network_med_df = deepcopy(tract_df.groupby(['city','algorithm_type','g_type']))[
+        'income_1'
+        ].median().reset_index()
+    network_med_df = network_med_df.rename(columns = {'income_1' : 'income_med_1'})  
+
+    # relative poverty line - 50% of city's median income
+    network_med_df['rel_poverty_line_1'] = network_med_df['income_med_1'] / 2
+    tract_df = pd.merge(tract_df, network_med_df, how = 'left', on = ['city','algorithm_type','g_type'])
+
+    # dummy for poor tracts
+    tract_df['poor_1'] = (tract_df['income_1'] < tract_df['rel_poverty_line_1']).astype('int')
 
 
 # 4.4.) CALCULATE (PERCETAGE) DIFFERENCE OF TRACTS AND COMMUNITY AVERAGES FROM NETWORK AVERAGE
