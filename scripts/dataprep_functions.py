@@ -1,4 +1,4 @@
-        ## !!! Difference from previous notebooks: community labels (which are calculated from several runs, so they are consensus communities) are named 'S' INSTEAD OF 'S_cons' as it is shorter
+## !!! Difference from previous notebooks: community labels (which are calculated from several runs, so they are consensus communities) are named 'S' INSTEAD OF 'S_cons' as it is shorter
 
 
 # 0.) IMPORT PACKAGES
@@ -6,17 +6,57 @@
 import pandas as pd
 import geopandas as gpd
 import json
+import networkx as nx
 
 import numpy as np
 import scipy
 
-from itertools import product
+from copy import deepcopy
+
+from itertools import product # as iter_product
 
 from sklearn.metrics.cluster import normalized_mutual_info_score
 from sklearn.metrics.cluster import adjusted_mutual_info_score # Adjusted Mutual Information (adjusted against chance)
 from sklearn.metrics.cluster import adjusted_rand_score # Adjusted Rand Index
 
 from statistics import median
+
+# KERDES octave-ot hogy hasznaljam, a lentebbiek mik? máskor hogyan kellene ezt megcsinálnom??
+from oct2py import octave
+_ = octave.addpath('/home/barcsab/projects/urban_communities/scripts')
+_ = octave.addpath('/home/ubuntu/GenLouvain/')
+_ = octave.addpath('/home/ubuntu/GenLouvain/private/')
+
+########### MINDEN ÖSSZEÖNTVE, LEHET VAN BENNE FELESLEGES - TODO ATNEZNI
+
+import pandas as pd
+import numpy as np
+import geopandas as gpd
+import seaborn as sns
+import networkx as nx
+
+import scipy
+import csv
+
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import json
+import community as community_louvain
+from copy import deepcopy
+# from modularity_maximization.utils import get_modularity
+
+from itertools import product
+import networkx.algorithms.community as nx_comm
+from scipy.spatial.distance import pdist, squareform
+
+from shapely.geometry import Point, LineString
+from geopandas import GeoDataFrame
+
+import math
+from time import time
+
+import matplotlib.lines as lines
+
 
 # 1.) IMPORT DATA
 
@@ -26,6 +66,69 @@ from statistics import median
 mobility = pd.read_csv("../data/usageousers_city_mobility_CT_networks.rpt.gz") # basis of position and node importance calculations
 follow_hh = pd.read_csv("../data/usageousers_city_follower_CT_HH_networks.rpt.gz")
 follow_hh = follow_hh.rename(columns={"tract_home.1": "tract_home_1"})
+
+# how many cities do geoids belong to in the mobility dataframe?
+temp = mobility\
+        .melt(['cbsacode','cnt'])\
+        .groupby(['cbsacode','value'])\
+        .sum()['cnt']\
+        .sort_values(ascending=False)\
+        .reset_index()\
+        .groupby('value')\
+        .count()['cbsacode']\
+        .sort_values()
+# degree of geoids within cities in the mobility dataframe?
+temp2 = mobility\
+    .melt(['cbsacode','cnt'])\
+    .groupby(['cbsacode','value'])\
+    .sum()['cnt']\
+    .sort_values(ascending=False)\
+    .reset_index()
+# selecting geoids that are in two cities, and getting the lower degree variant for later exclusion
+mob_to_exclude = temp2\
+    .set_index('value').loc[temp[temp>1].index]\
+    .reset_index()\
+    .drop_duplicates(subset=['value'], keep='last').iloc[:,[1,0]]
+
+
+# how many cities do geoids belong to in the follower dataframe?
+temp = follow_hh\
+        .melt(['cbsacode','cnt'])\
+        .groupby(['cbsacode','value'])\
+        .sum()['cnt']\
+        .sort_values(ascending=False)\
+        .reset_index()\
+        .groupby('value')\
+        .count()['cbsacode']\
+        .sort_values()
+# degree of geoids within cities in the follower dataframe?
+temp2 = follow_hh\
+    .melt(['cbsacode','cnt'])\
+    .groupby(['cbsacode','value'])\
+    .sum()['cnt']\
+    .sort_values(ascending=False)\
+    .reset_index()
+# selecting geoids that are in two cities, and getting the lower degree variant for later exclusion
+fol_to_exclude = temp2\
+    .set_index('value').loc[temp[temp>1].index]\
+    .reset_index()\
+    .drop_duplicates(subset=['value'], keep='last').iloc[:,[1,0]]
+
+# TODO Eszter: kidobalni a mobility-bol es a follow_hh-bol ezt a 12 (cbsacode, geoid) parost **mindket oszlopbol**!!!!!!
+# ugyanezeket a parosokat a tract_df-bol is kidobalni kesobb, akkor, amikor letrehozod eloszor a tract_df-et
+# kitorolheted a drop... fuggvenyedet
+# igy neznek ki az exclude-os valtozok
+"""
+<pre>   cbsacode               value
+1     39300  14000US25021443102
+3     40140  14000US06037402002
+5     41940  14000US06001441503
+</pre>
+"""
+
+
+
+
 
 # 1.1.2.) census tract name --> cbsacode
 cbsacode = pd.read_csv("../data/cbsacode_shortname_tracts.csv",sep=";", index_col=0)
@@ -160,7 +263,7 @@ def degree_degreecent_dict(city, g_type):
     # calculate degree and degree centrality for each node
     degree_dict = dict(nx.degree(G, weight="cnt"))
     degreecent_values = np.array(list(degree_dict.values())) / np.array(list(degree_dict.values())).sum()
-    degreecent_dict = dict(zip(degree.keys(), degreecent_values)) ## ezt így lehet??
+    degreecent_dict = dict(zip(degree_dict.keys(), degreecent_values)) ## ezt így lehet?? KERDES: degree_dict.keys() kell ide?
     return degree_dict, degreecent_dict
 
 # 2.4.) Modularity calculations
@@ -282,7 +385,7 @@ def consen(city, algorithm_type, g_type):
     
 
     # joining iteration results (community label) as lists to nodes (- KERDES: jo, utolag kommentaltam at!!!) (It is needed to b done for geoid_1 and geoid_2 as a node can be on either end of the edge???)
-    both elements of the node(=tract) pairs
+    # both elements of the node(=tract) pairs
     consen_df = pd.merge(consen_df, iters['clusts'], left_on = 'geoid_1', right_on = 'geoid')
     consen_df = pd.merge(consen_df, iters['clusts'], left_on = 'geoid_2', right_on = 'geoid')
     consen_df = consen_df.rename(columns = {'clusts_x': 'clusts_1', 'clusts_y': 'clusts_2'})
@@ -325,7 +428,7 @@ def consen(city, algorithm_type, g_type):
 
 ### START
 
-def community_modularity(city, g_type):
+def community_modularity(city, g_type, tract_df):
     """
     Calculates how much a certain community contributes to the overall modularity.
     
@@ -361,17 +464,21 @@ def community_modularity(city, g_type):
     
     
     mod_df = pd.DataFrame(columns=['city', 'algorithm_type', 'g_type', 'S', 'modularity_S'])
-    
+# itt hianyzik vmi?? 0608
     for (modularity, algorithm_type) in [(Ms, 'ms'), (Mgn, 'mgn')]:
-        S_notsorted = deepcopy(tract_df[(tract_df['city'] == city) & (tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)].set_index('geoid')['S']) # KERDES Mikor kell deepcopy?
-        S = [S_notsorted.loc[k] for k in G.nodes()] # KERDES: kell ez?
+        S_notsorted = deepcopy(tract_df[\
+            (tract_df['city'] == city) & \
+            (tract_df['algorithm_type'] == algorithm_type) & \
+            (tract_df['g_type'] == g_type)\
+        ].set_index('geoid')['S']) # KERDES Mikor kell deepcopy?
+        S = [S_notsorted.loc[k] for k in G.nodes() if k in S_notsorted] # KERDES: kell ez?
     
         for s in set(S):
             com_vector = (np.array(S) == s).astype('int')
             # clusters to matrix format
             # matrix for each cluster (in which 1s are for node pairs which are in the given community all others are 0s)
             # same community matrix (stored as array) - 0 if either of the nodes is not in community, 1 if both are in community
-            same_com = numpy.outer(com_vector, com_vector)
+            same_com = np.outer(com_vector, com_vector)
       
             # add up how much more edges are present between community nodes then expected by nullmodel in the given community
             mod = (np.multiply(np.array(modularity), same_com).sum()) / (2 * A.sum())
@@ -387,7 +494,8 @@ def community_modularity(city, g_type):
 # 3.) CALCULATIONS USING THE FUNCTIONS AND DATA ABOVE
 
 # 3.1.) MAKE A SINGLE census_df (merge, add suffix and geoid)
-def merge_census():
+def merge_census(census_1, census_2): # vagy globalba a hasa helyett?
+
     census_1['geoid'] = census_1.apply(create_geoid,axis=1)
     census_2['geoid'] = census_2.apply(create_geoid,axis=1)
 
@@ -397,6 +505,7 @@ def merge_census():
     census_df = pd.merge(census_1, census_2, left_on = 'geoid_1', right_on = 'geoid_2')
     census_df = census_df.drop(columns = ['geoid_2'])
     census_df = census_df.rename(columns = {'geoid_1': 'geoid'})
+    return census_df
 
 # 3.2.) Make list of city names
 city_l = list(cbsacode['clean_name'].unique())
@@ -410,9 +519,11 @@ def community_detection_iters():
 
     for city in city_l:
         for g_type in ['mob','fol_hh']:
-            G = create_graphs(city, g_type) # corresponding weighted undirected graph
+            print(city)
+            print(g_type)
+            G = create_graph(city, g_type) # corresponding weighted undirected graph
             
-            # index conversion dicts
+            # inS_notsorteddex conversion dicts
             # geoid -> integer 0-... N-1
             # int -> geoid
             index_geoid_dict = dict(list(enumerate(G.nodes)))
@@ -441,6 +552,7 @@ def community_detection_iters():
             S_ms_df = pd.DataFrame()
             S_mgn_df = pd.DataFrame()
             for _ in range(10):
+                print(_)
                 # TODO Eszter!!!! sometimes it gives an error in the first line
                 Ms,Mgn = SpaMod(A,D,N,200) #((## KERDES what should be the number of bins? 100?))
                 S_ms,Q_ms,n_it_ms = octave.iterated_genlouvain(Ms, nout=3)
@@ -456,10 +568,10 @@ def community_detection_iters():
 
 
 # 3.4.) CALCULATE CONSENSUS CLUSTERING
-city_gtype_alg_combs = = product(city_l, ['mob','fol_hh'], ['ms','mgn'])
+city_gtype_alg_combs = product(city_l, ['mob','fol_hh'], ['ms','mgn'])
 
-def consen_calc():
-
+def calc_consen():
+    all_consensus_df = pd.DataFrame()
     for city, g_type, algorithm_type in city_gtype_alg_combs:
             
             # storing iteration results, empty dataframe for nodes
@@ -480,32 +592,42 @@ def consen_calc():
 
 
 # 3.5.) CREATE tract_df AND ADD DEGREE AND DEGREECENTRALITY TO THE DATASET
-
 def create_tract_df_with_degree():
+    
     tract_df = pd.read_csv('../data/consensus_clust.csv')
 
-    graph_combs = product(city_l, ['mob','fol_hh'])
     degree_df = pd.DataFrame()
     degreecent_df = pd.DataFrame()
 
+    graph_combs = product(city_l, ['mob','fol_hh'])
     for city, g_type in graph_combs:
         degree_dict, degreecent_dict = degree_degreecent_dict(city, g_type)
-        degree_df_iter = {degree_dict, orient = 'index', columns = ['degree']}
-        degreecent_df_iter = {degreecent_dict, orient = 'index', columns = ['degreecent']}
+
+        # hibas? degree_df_iter = {degree_dict, orient = 'index', columns = ['degree']}
+        # hibas? degreecent_df_iter = {degreecent_dict, orient = 'index', columns = ['degreecent']}
+        degree_df_iter = pd.DataFrame.from_dict(degree_dict, orient='index', columns = ['degree']).reset_index()
+        degree_df_iter = degree_df_iter.rename(columns = {'index' : 'geoid'})       
+
+        degreecent_df_iter = pd.DataFrame.from_dict(degreecent_dict, orient = 'index', columns = ['degreecent']).reset_index()
+        degreecent_df_iter = degreecent_df_iter.rename(columns = {'index' : 'geoid'})
+
         degree_df = pd.concat([degree_df, degree_df_iter])
         degreecent_df = pd.concat([degreecent_df, degreecent_df_iter])
 
     tract_df = pd.merge(tract_df, degree_df, how = 'left', on = ['geoid'])
     tract_df = pd.merge(tract_df, degreecent_df, how = 'left', on = ['geoid'])
-
+    
+    # TODO: idemasolni a droppolo reszt
+    
+    return tract_df
 
 # 3.6.) community_df
 
 # 3.6.1.) CREATE community_df
-def create_community_df():
+def create_community_df(tract_df):
     community_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['degree', 'degreecent'].mean().reset_index()
     community_df = community_df.rename(columns = {'degree' : 'degree_avg', 'degreecent' : 'degreecent_avg'})
-
+    return tract_df, community_df
 
 # 3.6.2.) COMMUNITY MODAULARITY - ellenőrizni kellene HIBAS KERDESES 0601
 
@@ -531,7 +653,7 @@ city_l.remove('san_diego')
 city_l.remove('los_angeles')
 """
 
-def drop_duplicate_tracts():
+def drop_duplicate_tracts(tract_df):
     """
     Drop tracts from tract_df.
     It drops all but one from tracts that are present in more than one city in the dataframe, and keep the occurance with higher degree.
@@ -541,35 +663,38 @@ def drop_duplicate_tracts():
 
     # drop duplicates and only keep the first (highest degree) occurance
     tract_df = tract_df.drop_duplicates(subset = ['city', 'algorithm_type', 'g_type', 'geoid'])
+    return tract_df
 
 
-
-def calc_community_modularity():
+def calc_community_modularity(community_df, tract_df):
     """
     Calculate how much a community contributes to the overall network modularity and store it in community_df.
     """
     com_mod_df = pd.DataFrame()
-
+ # 0608 IITT
+    graph_combs = product(city_l, ['mob','fol_hh'])  
+    # print([(k,v) for k,v in graph_combs])  
     for city, g_type in graph_combs:
-        df = community_modularity(city, g_type)
+        df = community_modularity(city, g_type, tract_df)
         com_mod_df = pd.concat([com_mod_df, df])
     community_df = pd.merge(community_df, com_mod_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) ## TODO ELLENORZES megnézni, hogy hány sora marad, ha nem left, hanem inner, jó-e ez a merge
-
+    return community_df, com_mod_df
     
 # 3.7.) network_df
 
 # 3.7.1.) MODULARITY CALCULATIONS
 # 3.7.1.1.) CREATE network_df WITH OVERALL NETWORK MODULARITY
-def calc_modularity():
+def calc_modularity(com_mod_df):
     """
     Calculate overall network modularity and store it in network_df.
     """
     network_df = deepcopy(com_mod_df.groupby(['city', 'algorithm_type', 'g_type'])[['modularity_S']].sum().reset_index())
     network_df = network_df.rename(columns = {'modularity_S' : 'modularity'})
+    return network_df
 
 # 3.7.1.2.) CALCULATE MODULARITY CONTRIBUTION AND ADD IT TO community_df
 # modularity contribution = mod_community/mod_network
-def calc_modularity_contribution():
+def calc_modularity_contribution(community_df, network_df):
     """
     Calculate the proportion of the network modularity originating from the community and store it in community_df.
     Modularity contribution = Modularity of the network / "modularity" of the community
@@ -577,24 +702,18 @@ def calc_modularity_contribution():
 
     community_df = pd.merge(community_df, network_df, how = 'left', on = ['city', 'algorithm_type', 'g_type'])
     community_df['mod_S_p'] = community_df['modularity_S'] / community_df['modularity']
+    return community_df
 
 # 3.7.1.3.) TODO talán később -- Community quality - RANK BASED ON mod_S_p 
 # IDERAKNI - félig van csak kész
 
 
 # 3.7.2.) ADD NUMBER OF TRACT IN NETWORK, IN CITY AND IN COMMUNITY AND ADD IT TO network_df AND community_df RESPECTIVELY
-def calc_tract_number(): # TODO 0608 esetleg ide rakni a fentebbi tract számítást is!!
+def calc_tract_number(tract_df, community_df, network_df, cbsacode): # TODO 0608 esetleg ide rakni a fentebbi tract számítást is!!
     """
     Calculate number of tracts in network, in city and in community and store it in network_df and community_df respectively.
     """
-    # number of tracts in network
-    network_df = pd.merge(network_df, community_cnt_df.groupby(['city', 'algorithm_type', 'g_type'])[['tract_sum']].sum().reset_index(), how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenorizni, hogyha inner lenne left helyett, akkor elveszne-e sor, mert nem szabadna
-
-    # number of tracts in city
-    city_cnt_df = deepcopy(cbsacode.groupby(['clean_name'])['short_name'].count().reset_index())
-    city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})  
-    network_df = pd.merge(network_df, city_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
-
+    
     # number of tracts or number of users in it?? KERDES
     # sum 'ones' or sum 'cnt' ?
     # number of tracts in community
@@ -602,21 +721,31 @@ def calc_tract_number(): # TODO 0608 esetleg ide rakni a fentebbi tract számít
     community_cnt_df = community_cnt_df.rename(columns = {'ones' : 'tract_sum'})
     community_df = pd.merge(community_df, community_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) # TODO LATER: ellenőrizni, hogyha inner, akkor elveszik-e belőle sor, mert nem szabadna
 
+    # number of tracts in network
+    network_df = pd.merge(network_df, community_cnt_df.groupby(['city', 'algorithm_type', 'g_type'])[['tract_sum']].sum().reset_index(), how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenorizni, hogyha inner lenne left helyett, akkor elveszne-e sor, mert nem szabadna
+
+    # number of tracts in city
+    city_cnt_df = deepcopy(cbsacode.groupby(['clean_name'])['short_name'].count().reset_index())
+    city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})  
+    network_df = pd.merge(network_df, city_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
+    return community_df, network_df
+
 
 
 # 3.7.3.) ADD DENSITY TO network_df
-def calc_network_density():
+def calc_network_density(network_df):
     """
     Calculate network density and store it in network_df.
     """
-    network_df['density'] = network_df.apply(lambda row: nx.density(create_graphs(row['city'], row['g_type'])))
+    network_df['density'] = network_df.apply(lambda row: nx.density(create_graph(row['city'], row['g_type'])))
+    return network_df
 
 # 3.7.4.) SIMILARITY BETWEEN COUNTIES AND COMMUNITIES
 # Normalized Mutual Information
 ## How similar is the clustering to the county system? correlation, symmetric function
 ##  --> the higher the index the more similar the clustering to county system
 
-def calc_community_county_similarity():
+def calc_community_county_similarity(tract_df):
     """
     Calculate Normalized Mutual Information, Adjusted Normalized Mutual Information and Adjusted Rand Index
     which describe the similarity of county-community system, and store it in network_df.
@@ -639,6 +768,7 @@ def calc_community_county_similarity():
 
     # merge it to network_df
     network_df = pd.merge(network_df, nmi_all_df, how = 'left', on = ['city', 'g_type', 'algorithm_type'])
+    return network_df
 
 
 
@@ -648,7 +778,7 @@ def calc_community_county_similarity():
 
 # NINCS PRÓBÁLVA ettől lejjebb
 # 4.1.) DROP UNNECESARRY COLUMNS AND RENAME - KERDES: ez igy ok?
-def clean_census_to_tract_df():
+def clean_census_to_tract_df(tract_df, census_df):
     census_df = census_df.drop(columns = ['state_1', 'county_1', 'tract_1', 'population_error_1',
        'education_bachelor_error_1', 'education_total_1', 'education_total_error_1',
        'income_error_1', 'race_total_1', 'race_total_error_1',
@@ -662,12 +792,13 @@ def clean_census_to_tract_df():
 
 # 4.2.) MERGE CENSUS DATA TO tract_df
     tract_df = pd.merge(tract_df, census_df, how = 'left', on = ['geoid'])
+    return tract_df, census_df
 
 
 ### elnevezes S_CONS HELYETT S, S HELYETT S_NONCONS
 
 # 4.3.) ADD SUM and STD OF CENSUS DATA TO network_df AND community_df
-def calc_sum_and_std():
+def calc_sum_and_std(tract_df, community_df, network_df):
     """
     Calculate the sum and standard error of tract level socioeconomic data (census) for community and network level
     and store it in community_df and network_df.
@@ -690,14 +821,14 @@ def calc_sum_and_std():
 
     network_df = pd.merge(network_df, network_sum_df, how = 'left', on = ['city','algorithm_type','g_type'])
     network_df = pd.merge(network_df, network_std_df, how = 'left', on = ['city','algorithm_type','g_type'])
+    return community_df, network_df
 
 # 4.2.) INCOME PERCENTILE
 #### scipy.stats.percentileofscore(array, score) - gives back the percentil of score
 # top quality communities
-def calc_income_percentile():
+def calc_income_percentile(tract_df, community_df):
     census_city_df = tract_df.groupby(['city','algorithm_type','g_type'])['income_1'].apply(list).reset_index()
     census_city_df = census_city_df.rename(columns = {'income_1' : 'income_1_l'})
-
 
     tract_df = pd.merge(tract_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
     community_df = pd.merge(community_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
@@ -705,11 +836,12 @@ def calc_income_percentile():
     # KERDES EZ LENTEBB JO?
     tract_df['income_pct'] = tract_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], row['income_1']))
     community_df['income_pct'] = community_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], (row['income_sum_1'] / row['tract_sum']))) 
+    return tract_df, community_df
 
 
 # 4.3.) CREATE POOR TRACT DUMMIES - poor tracts are those with less than 50% of the median tract income in the given city
 
-def create_poor_dummy():
+def create_poor_dummy(tract_df):
     """
     Create a poor dummy which takes the value 1 when the tract's income is lower than 50% of the median tract income in the network,
     and takes 0 otherwise. It is stored in tract_df.
@@ -727,11 +859,12 @@ def create_poor_dummy():
 
     # dummy for poor tracts
     tract_df['poor_1'] = (tract_df['income_1'] < tract_df['rel_poverty_line_1']).astype('int')
+    return tract_df
 
 
 # 4.4.) CALCULATE (PERCETAGE) DIFFERENCE OF TRACTS AND COMMUNITY AVERAGES FROM NETWORK AVERAGE
 
-def diff_from_network_avg():
+def diff_from_network_avg(tract_df):
     """
 
     Calculate the percentage difference (or raw difference in case of income) of tracts and communities from network average.
@@ -797,6 +930,9 @@ def diff_from_network_avg():
         'educ_ba_p_diff_1' : 'educ_ba_p_diff_avg_1', 'white_p_diff_1' : 'white_p_diff_avg_1', 'black_p_diff_1' : 'black_p_diff_avg_1',
         'native_p_diff_1' : 'native_p_diff_avg_1', 'asian_p_diff_1' : 'asian_p_diff_avg_1', 'income_diff_1' : 'income_diff_avg_1'
         })
+
+    # TODO 0608 EZ ITT HIANYOSNAK TUNIK!!!!!!!!!!!!!!!!!!!!!!!!!!!4
+    return tract_df
 
 
 # df = pd.read_csv(....)
