@@ -387,16 +387,16 @@ def community_modularity(city, g_type):
 # 3.) CALCULATIONS USING THE FUNCTIONS AND DATA ABOVE
 
 # 3.1.) MAKE A SINGLE census_df (merge, add suffix and geoid)
+def merge_census():
+    census_1['geoid'] = census_1.apply(create_geoid,axis=1)
+    census_2['geoid'] = census_2.apply(create_geoid,axis=1)
 
-census_1['geoid'] = census_1.apply(create_geoid,axis=1)
-census_2['geoid'] = census_2.apply(create_geoid,axis=1)
+    census_1 = census_1.add_suffix('_1')
+    census_2 = census_2.add_suffix('_2')
 
-census_1 = census_1.add_suffix('_1')
-census_2 = census_2.add_suffix('_2')
-
-census_df = pd.merge(census_1, census_2, left_on = 'geoid_1', right_on = 'geoid_2')
-census_df = census_df.drop(columns = ['geoid_2'])
-census_df = census_df.rename(columns = {'geoid_1': 'geoid'})
+    census_df = pd.merge(census_1, census_2, left_on = 'geoid_1', right_on = 'geoid_2')
+    census_df = census_df.drop(columns = ['geoid_2'])
+    census_df = census_df.rename(columns = {'geoid_1': 'geoid'})
 
 # 3.2.) Make list of city names
 city_l = list(cbsacode['clean_name'].unique())
@@ -479,44 +479,35 @@ def consen_calc():
 
 
 
-# 3.5.) CREATE tract_df AND ADD NETWORK PROPERTIES TO THE DATASET
+# 3.5.) CREATE tract_df AND ADD DEGREE AND DEGREECENTRALITY TO THE DATASET
 
-tract_df = pd.read_csv('../data/consensus_clust.csv')
+def create_tract_df_with_degree():
+    tract_df = pd.read_csv('../data/consensus_clust.csv')
 
-graph_combs = product(city_l, ['mob','fol_hh'])
-degree_df = pd.DataFrame()
-degreecent_df = pd.DataFrame()
+    graph_combs = product(city_l, ['mob','fol_hh'])
+    degree_df = pd.DataFrame()
+    degreecent_df = pd.DataFrame()
 
-for city, g_type in graph_combs:
-    degree_dict, degreecent_dict = degree_degreecent_dict(city, g_type)
-    degree_df_iter = {degree_dict, orient = 'index', columns = ['degree']}
-    degreecent_df_iter = {degreecent_dict, orient = 'index', columns = ['degreecent']}
-    degree_df = pd.concat([degree_df, degree_df_iter])
-    degreecent_df = pd.concat([degreecent_df, degreecent_df_iter])
+    for city, g_type in graph_combs:
+        degree_dict, degreecent_dict = degree_degreecent_dict(city, g_type)
+        degree_df_iter = {degree_dict, orient = 'index', columns = ['degree']}
+        degreecent_df_iter = {degreecent_dict, orient = 'index', columns = ['degreecent']}
+        degree_df = pd.concat([degree_df, degree_df_iter])
+        degreecent_df = pd.concat([degreecent_df, degreecent_df_iter])
 
-tract_df = pd.merge(tract_df, degree_df, how = 'left', on = ['geoid'])
-tract_df = pd.merge(tract_df, degreecent_df, how = 'left', on = ['geoid'])
+    tract_df = pd.merge(tract_df, degree_df, how = 'left', on = ['geoid'])
+    tract_df = pd.merge(tract_df, degreecent_df, how = 'left', on = ['geoid'])
 
 
 # 3.6.) community_df
 
 # 3.6.1.) CREATE community_df
-community_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['degree', 'degreecent'].mean().reset_index()
-community_df = community_df.rename(columns = {'degree' : 'degree_avg', 'degreecent' : 'degreecent_avg'})
-
-# 3.6.2.) ADD CALCULATED VARIABLES TO community_df
-
-# 3.6.2.2.) TRACT COUNT PER COMMUNITY
-# number of tracts or number of users in it?? KERDES 0601 is fontos
-# 0607 ITT HAGYTAM ABBA
-# sum 'ones' or sum 'cnt'
-community_cnt_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['ones'].sum().reset_index()
-community_cnt_df = community_cnt_df.rename(columns = {'ones' : 'tract_sum'})
-
-community_df = pd.merge(community_df, community_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) # TODO LATER: ellenőrizni, hogyha inner, akkor elveszik-e belőle sor, mert nem szabadna
+def create_community_df():
+    community_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['degree', 'degreecent'].mean().reset_index()
+    community_df = community_df.rename(columns = {'degree' : 'degree_avg', 'degreecent' : 'degreecent_avg'})
 
 
-# 3.6.2.3.) COMMUNITY MODAULARITY - ellenőrizni kellene HIBAS KERDESES 0601
+# 3.6.2.) COMMUNITY MODAULARITY - ellenőrizni kellene HIBAS KERDESES 0601
 
 # HIBAS AZ ADATBAZIS --> vannak benne duplikátumok
 ## Innen látom, hogy vannak benne duplikátumok
@@ -591,10 +582,10 @@ def calc_modularity_contribution():
 # IDERAKNI - félig van csak kész
 
 
-# 3.7.2.) ADD NUMBER OF TRACT IN NETWORK AND IN CITY TO network_df
+# 3.7.2.) ADD NUMBER OF TRACT IN NETWORK, IN CITY AND IN COMMUNITY AND ADD IT TO network_df AND community_df RESPECTIVELY
 def calc_tract_number(): # TODO 0608 esetleg ide rakni a fentebbi tract számítást is!!
     """
-    Calculate number of tracts in network and in city and store it in network_df.
+    Calculate number of tracts in network, in city and in community and store it in network_df and community_df respectively.
     """
     # number of tracts in network
     network_df = pd.merge(network_df, community_cnt_df.groupby(['city', 'algorithm_type', 'g_type'])[['tract_sum']].sum().reset_index(), how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenorizni, hogyha inner lenne left helyett, akkor elveszne-e sor, mert nem szabadna
@@ -603,6 +594,15 @@ def calc_tract_number(): # TODO 0608 esetleg ide rakni a fentebbi tract számít
     city_cnt_df = deepcopy(cbsacode.groupby(['clean_name'])['short_name'].count().reset_index())
     city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})  
     network_df = pd.merge(network_df, city_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
+
+    # number of tracts or number of users in it?? KERDES
+    # sum 'ones' or sum 'cnt' ?
+    # number of tracts in community
+    community_cnt_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['ones'].sum().reset_index()
+    community_cnt_df = community_cnt_df.rename(columns = {'ones' : 'tract_sum'})
+    community_df = pd.merge(community_df, community_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) # TODO LATER: ellenőrizni, hogyha inner, akkor elveszik-e belőle sor, mert nem szabadna
+
+
 
 # 3.7.3.) ADD DENSITY TO network_df
 def calc_network_density():
@@ -648,7 +648,7 @@ def calc_community_county_similarity():
 
 # NINCS PRÓBÁLVA ettől lejjebb
 # 4.1.) DROP UNNECESARRY COLUMNS AND RENAME - KERDES: ez igy ok?
-def clean_census():
+def clean_census_to_tract_df():
     census_df = census_df.drop(columns = ['state_1', 'county_1', 'tract_1', 'population_error_1',
        'education_bachelor_error_1', 'education_total_1', 'education_total_error_1',
        'income_error_1', 'race_total_1', 'race_total_error_1',
@@ -661,7 +661,7 @@ def clean_census():
     census_df = census_df.rename(columns= {'education_bachelor_1' : 'educ_ba_1', 'education_bachelor_2' : 'educ_ba_2'})
 
 # 4.2.) MERGE CENSUS DATA TO tract_df
-tract_df = pd.merge(tract_df, census_df, how = 'left', on = ['geoid'])
+    tract_df = pd.merge(tract_df, census_df, how = 'left', on = ['geoid'])
 
 
 ### elnevezes S_CONS HELYETT S, S HELYETT S_NONCONS
@@ -694,16 +694,17 @@ def calc_sum_and_std():
 # 4.2.) INCOME PERCENTILE
 #### scipy.stats.percentileofscore(array, score) - gives back the percentil of score
 # top quality communities
-census_city_df = tract_df.groupby(['city','algorithm_type','g_type'])['income_1'].apply(list).reset_index()
-census_city_df = census_city_df.rename(columns = {'income_1' : 'income_1_l'})
+def calc_income_percentile():
+    census_city_df = tract_df.groupby(['city','algorithm_type','g_type'])['income_1'].apply(list).reset_index()
+    census_city_df = census_city_df.rename(columns = {'income_1' : 'income_1_l'})
 
 
-tract_df = pd.merge(tract_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
-community_df = pd.merge(community_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
- 
-# KERDES EZ LENTEBB JO?
-tract_df['income_pct'] = tract_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], row['income_1']))
-community_df['income_pct'] = community_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], (row['income_sum_1'] / row['tract_sum']))) 
+    tract_df = pd.merge(tract_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
+    community_df = pd.merge(community_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
+    
+    # KERDES EZ LENTEBB JO?
+    tract_df['income_pct'] = tract_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], row['income_1']))
+    community_df['income_pct'] = community_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], (row['income_sum_1'] / row['tract_sum']))) 
 
 
 # 4.3.) CREATE POOR TRACT DUMMIES - poor tracts are those with less than 50% of the median tract income in the given city
