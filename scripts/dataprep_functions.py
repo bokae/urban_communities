@@ -67,6 +67,8 @@ mobility = pd.read_csv("../data/usageousers_city_mobility_CT_networks.rpt.gz") #
 follow_hh = pd.read_csv("../data/usageousers_city_follower_CT_HH_networks.rpt.gz")
 follow_hh = follow_hh.rename(columns={"tract_home.1": "tract_home_1"})
 
+# 1.1.2.) DROP THE DUPLICATE TRACTS FROM THE CITY WHERE IT HAS THE LOWER DEGREE
+
 # how many cities do geoids belong to in the mobility dataframe?
 temp = mobility\
         .melt(['cbsacode','cnt'])\
@@ -89,6 +91,8 @@ mob_to_exclude = temp2\
     .set_index('value').loc[temp[temp>1].index]\
     .reset_index()\
     .drop_duplicates(subset=['value'], keep='last').iloc[:,[1,0]]
+
+mob_to_exclude_l = list(zip(mob_to_exclude['cbsacode'], mob_to_exclude['value']))
 
 
 # how many cities do geoids belong to in the follower dataframe?
@@ -114,7 +118,10 @@ fol_to_exclude = temp2\
     .reset_index()\
     .drop_duplicates(subset=['value'], keep='last').iloc[:,[1,0]]
 
-# TODO Eszter: kidobalni a mobility-bol es a follow_hh-bol ezt a 12 (cbsacode, geoid) parost **mindket oszlopbol**!!!!!!
+fol_to_exclude_l = list(zip(fol_to_exclude['cbsacode'], fol_to_exclude['value']))
+
+
+# TODO Eszter: kidobalni a mobility-bol es a follow_hh-bol ezt a 12 (cbsacode, geoid) parost **mindket oszlopbol**!!!!!! - BIA csak 3 ilyet találtam. Miért?
 # ugyanezeket a parosokat a tract_df-bol is kidobalni kesobb, akkor, amikor letrehozod eloszor a tract_df-et
 # kitorolheted a drop... fuggvenyedet
 # igy neznek ki az exclude-os valtozok
@@ -126,11 +133,23 @@ fol_to_exclude = temp2\
 </pre>
 """
 
+# drop from mobility_df
 
+mobility['tuple_1'] = list(zip(mobility['cbsacode'], mobility['tract_home']))
+mobility['tuple_2'] = list(zip(mobility['cbsacode'], mobility['tract_work']))
 
+mobility = mobility[-mobility['tuple_1'].isin(mob_to_exclude_l)]
+mobility = mobility[-mobility['tuple_2'].isin(mob_to_exclude_l)]
 
+# drop from follow_hh 
 
-# 1.1.2.) census tract name --> cbsacode
+follow_hh['tuple_1'] = list(zip(follow_hh['cbsacode'], follow_hh['tract_home']))
+follow_hh['tuple_2'] = list(zip(follow_hh['cbsacode'], follow_hh['tract_home_1']))
+
+follow_hh = follow_hh[-follow_hh['tuple_1'].isin(fol_to_exclude_l)]
+follow_hh = follow_hh[-follow_hh['tuple_2'].isin(fol_to_exclude_l)]
+
+# 1.1.3.) census tract name --> cbsacode
 cbsacode = pd.read_csv("../data/cbsacode_shortname_tracts.csv",sep=";", index_col=0)
 cbsacode['clean_name'] = cbsacode["short_name"].map(lambda s: s.split("/")[0].replace(' ','_').replace('.','').lower())
 
@@ -171,7 +190,7 @@ def create_geoid(row):
 # copied from Spatial_modularity_pooled notebook
 def create_graph(city, g_type): ### ATIRTAM KICSIT, ELLENORIZNI
     """
-    For a given city name, it generates a mobility and follower (home-home) graph.
+    For a given city name, it generates a mobility or follower (home-home) graph.
     
     e.g. g = create_graph("Boston")
     
@@ -347,7 +366,12 @@ def SpaMod(A,D,N,binnumber): # binnumber instead of b = binsize
 def consen(city, algorithm_type, g_type):
     """
     Function that does the consensus clustering based on the results
-    of multiple runs of previous algorithms. -- It makes a weighted graph with the same nodes (tracts) as the origianl clustering and edge weights are the number of iteration when the two nodes were clustered to the same community according to the input dataset. The consensus clustering is the clustering made on this new network using ordinary community detection calculating modularity a la Newman-Girvan. ??kerdes ez newman-girvan, ugye?  
+    of multiple runs of previous algorithms.
+
+    -- It makes a weighted graph with the same nodes (tracts) as the origianl clustering
+    and edge weights are the number of iteration when the two nodes were clustered to the same community according to the input dataset.
+    The consensus clustering is the clustering made on this new network
+    using ordinary community detection calculating modularity a la Newman-Girvan. ??kerdes ez newman-girvan, ugye?  
     
     Parameters:
     -----------
@@ -473,7 +497,12 @@ def community_modularity(city, g_type, tract_df):
         ].set_index('geoid')['S']) # KERDES Mikor kell deepcopy?
         S = [S_notsorted.loc[k] for k in G.nodes() if k in S_notsorted] # KERDES: kell ez?
     
-        for s in set(S):
+        print(S_notsorted)
+        print(S[0])
+        print(set(S))
+        print(list(set(S)))
+
+        for s in list(set(S)):
             com_vector = (np.array(S) == s).astype('int')
             # clusters to matrix format
             # matrix for each cluster (in which 1s are for node pairs which are in the given community all others are 0s)
@@ -519,8 +548,7 @@ def community_detection_iters():
 
     for city in city_l:
         for g_type in ['mob','fol_hh']:
-            print(city)
-            print(g_type)
+            print(f"Calculating iterations for {city}, graph type {g_type}...")
             G = create_graph(city, g_type) # corresponding weighted undirected graph
             
             # inS_notsorteddex conversion dicts
@@ -552,7 +580,7 @@ def community_detection_iters():
             S_ms_df = pd.DataFrame()
             S_mgn_df = pd.DataFrame()
             for _ in range(10):
-                print(_)
+                print(_, end=", ")
                 # TODO Eszter!!!! sometimes it gives an error in the first line
                 Ms,Mgn = SpaMod(A,D,N,200) #((## KERDES what should be the number of bins? 100?))
                 S_ms,Q_ms,n_it_ms = octave.iterated_genlouvain(Ms, nout=3)
@@ -565,6 +593,7 @@ def community_detection_iters():
                     df = df.set_index('geoid')
                     csv_name = 'com_detect_iters_' + city + '_' + algorithm_type + '_' + g_type + '.csv'
                     df.to_csv('../data/'+ csv_name)
+            print("Done.\n")
 
 
 # 3.4.) CALCULATE CONSENSUS CLUSTERING
@@ -573,7 +602,9 @@ city_gtype_alg_combs = product(city_l, ['mob','fol_hh'], ['ms','mgn'])
 def calc_consen():
     all_consensus_df = pd.DataFrame()
     for city, g_type, algorithm_type in city_gtype_alg_combs:
-            
+            print(city)
+            print(g_type)
+            print(algorithm_type)
             # storing iteration results, empty dataframe for nodes
             consensus_df = pd.DataFrame()
             
@@ -611,11 +642,14 @@ def create_tract_df_with_degree():
         degreecent_df_iter = pd.DataFrame.from_dict(degreecent_dict, orient = 'index', columns = ['degreecent']).reset_index()
         degreecent_df_iter = degreecent_df_iter.rename(columns = {'index' : 'geoid'})
 
+        degree_df_iter['g_type'] = g_type
+        degreecent_df_iter['g_type'] = g_type
+
         degree_df = pd.concat([degree_df, degree_df_iter])
         degreecent_df = pd.concat([degreecent_df, degreecent_df_iter])
 
-    tract_df = pd.merge(tract_df, degree_df, how = 'left', on = ['geoid'])
-    tract_df = pd.merge(tract_df, degreecent_df, how = 'left', on = ['geoid'])
+    tract_df = pd.merge(tract_df, degree_df, how = 'left', on = ['g_type', 'geoid'])
+    tract_df = pd.merge(tract_df, degreecent_df, how = 'left', on = ['g_type', 'geoid'])
     
     # TODO: idemasolni a droppolo reszt
     
@@ -652,19 +686,6 @@ city_l.remove('baltimore')
 city_l.remove('san_diego')
 city_l.remove('los_angeles')
 """
-
-def drop_duplicate_tracts(tract_df):
-    """
-    Drop tracts from tract_df.
-    It drops all but one from tracts that are present in more than one city in the dataframe, and keep the occurance with higher degree.
-    """
-    # order tract_df by degree - variables otehr than degree are only in the listing to keep the dataframe 'pretty'
-    tract_df = tract_df.sort_values(by=['city', 'algorithm_type', 'g_type', 'geoid','degree'], ascending=False)
-
-    # drop duplicates and only keep the first (highest degree) occurance
-    tract_df = tract_df.drop_duplicates(subset = ['city', 'algorithm_type', 'g_type', 'geoid'])
-    return tract_df
-
 
 def calc_community_modularity(community_df, tract_df):
     """
@@ -717,6 +738,7 @@ def calc_tract_number(tract_df, community_df, network_df, cbsacode): # TODO 0608
     # number of tracts or number of users in it?? KERDES
     # sum 'ones' or sum 'cnt' ?
     # number of tracts in community
+    tract_df['ones'] = 1
     community_cnt_df = tract_df.groupby(['city', 'algorithm_type', 'g_type', 'S'])['ones'].sum().reset_index()
     community_cnt_df = community_cnt_df.rename(columns = {'ones' : 'tract_sum'})
     community_df = pd.merge(community_df, community_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) # TODO LATER: ellenőrizni, hogyha inner, akkor elveszik-e belőle sor, mert nem szabadna
@@ -726,8 +748,10 @@ def calc_tract_number(tract_df, community_df, network_df, cbsacode): # TODO 0608
 
     # number of tracts in city
     city_cnt_df = deepcopy(cbsacode.groupby(['clean_name'])['short_name'].count().reset_index())
-    city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})  
-    network_df = pd.merge(network_df, city_cnt_df, how = 'left', on = ['city', 'algorithm_type', 'g_type']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
+    city_cnt_df = city_cnt_df.rename(columns = {'short_name' : 'tract_city_sum'})
+    network_df = pd.merge(network_df, city_cnt_df, how = 'left', left_on = ['city'], right_on = ['clean_name']) # TODO ellenőrizni, h left helyett inner mergenél kiesne-e sor, nem szabadna
+    network_df = network_df.drop(columns = ['clean_name'])
+
     return community_df, network_df
 
 
@@ -737,7 +761,7 @@ def calc_network_density(network_df):
     """
     Calculate network density and store it in network_df.
     """
-    network_df['density'] = network_df.apply(lambda row: nx.density(create_graph(row['city'], row['g_type'])))
+    network_df['density'] = network_df.apply(lambda row: nx.density(create_graph(row['city'], row['g_type'])),axis=1)
     return network_df
 
 # 3.7.4.) SIMILARITY BETWEEN COUNTIES AND COMMUNITIES
@@ -745,7 +769,7 @@ def calc_network_density(network_df):
 ## How similar is the clustering to the county system? correlation, symmetric function
 ##  --> the higher the index the more similar the clustering to county system
 
-def calc_community_county_similarity(tract_df):
+def calc_community_county_similarity(tract_df, network_df):
     """
     Calculate Normalized Mutual Information, Adjusted Normalized Mutual Information and Adjusted Rand Index
     which describe the similarity of county-community system, and store it in network_df.
@@ -830,12 +854,12 @@ def calc_income_percentile(tract_df, community_df):
     census_city_df = tract_df.groupby(['city','algorithm_type','g_type'])['income_1'].apply(list).reset_index()
     census_city_df = census_city_df.rename(columns = {'income_1' : 'income_1_l'})
 
-    tract_df = pd.merge(tract_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
-    community_df = pd.merge(community_df, census_city_df['income_1_l'], how = 'left', on = ['city'])
+    tract_df = pd.merge(tract_df, census_city_df[['city', 'income_1_l']], how = 'left', on = ['city'])
+    community_df = pd.merge(community_df, census_city_df[['city', 'income_1_l']], how = 'left', on = ['city'])
     
     # KERDES EZ LENTEBB JO?
-    tract_df['income_pct'] = tract_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], row['income_1']))
-    community_df['income_pct'] = community_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], (row['income_sum_1'] / row['tract_sum']))) 
+    tract_df['income_pct'] = tract_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], row['income_1']),axis=1)
+    community_df['income_pct'] = community_df.apply(lambda row: scipy.stats.percentileofscore(row['income_1_l'], (row['income_sum_1'] / row['tract_sum'])),axis=1) 
     return tract_df, community_df
 
 
@@ -864,7 +888,7 @@ def create_poor_dummy(tract_df):
 
 # 4.4.) CALCULATE (PERCETAGE) DIFFERENCE OF TRACTS AND COMMUNITY AVERAGES FROM NETWORK AVERAGE
 
-def diff_from_network_avg(tract_df):
+def diff_from_network_avg(tract_df, network_df):
     """
 
     Calculate the percentage difference (or raw difference in case of income) of tracts and communities from network average.
