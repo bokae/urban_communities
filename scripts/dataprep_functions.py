@@ -146,12 +146,22 @@ mobility = mobility[-mobility['tuple_2'].isin(mob_to_exclude_l)]
 follow_hh['tuple_1'] = list(zip(follow_hh['cbsacode'], follow_hh['tract_home']))
 follow_hh['tuple_2'] = list(zip(follow_hh['cbsacode'], follow_hh['tract_home_1']))
 
+
 follow_hh = follow_hh[-follow_hh['tuple_1'].isin(fol_to_exclude_l)]
 follow_hh = follow_hh[-follow_hh['tuple_2'].isin(fol_to_exclude_l)]
+follow_hh = follow_hh[-follow_hh['tuple_1'].isin(mob_to_exclude_l)]
+follow_hh = follow_hh[-follow_hh['tuple_2'].isin(mob_to_exclude_l)]
 
 # 1.1.3.) census tract name --> cbsacode
 cbsacode = pd.read_csv("../data/cbsacode_shortname_tracts.csv",sep=";", index_col=0)
 cbsacode['clean_name'] = cbsacode["short_name"].map(lambda s: s.split("/")[0].replace(' ','_').replace('.','').lower())
+
+# drop
+print('cbsacode drop')
+print(len(cbsacode))
+cbsacode['tuple'] = list(zip(cbsacode['cbsacode'], cbsacode['geoid']))
+cbsacode = cbsacode[-cbsacode['tuple'].isin(fol_to_exclude_l)]
+cbsacode = cbsacode[-cbsacode['tuple'].isin(mob_to_exclude_l)]
 
 
 # 1.2.) GeoData
@@ -425,15 +435,31 @@ def consen(city, algorithm_type, g_type):
     del same_com
 
     #remove missing edges from edgelist (delete edges with 0 weight)
-    consen_df = deepcopy(consen_df[consen_df['w']!=0])
+    # consen_df = deepcopy(consen_df[consen_df['w']!=0])
+    # 0611 fentebbi sort kikommenteltem, talán ez volt a hiba oka. Feltételezésem: kidobja a nulla éleket, de mivel vannak olyan nodeok, amihez csak 0-s él vezet, ezért ezek a nodeok is kikerülnek, amikor edge-ek alapján csinálok consensus clusteringet
+    
+    
+    
     ## -------------print("Getting number of zero differences...") # HIBA: KIDOB NODE-OT!!!---------------------KERDES: Miért dob ki nodeot? 0326 JAVITAS 0531: Ez csak azt jelenti, hogy semelyik futásban nem azonos a társaság címkéjük
     
 
     
     # graph for consensus clustering
     # ((create a graph from the consen_df edgelist (nodes (tracts) are same as in the original network, but the edge weights are the number of iterations when they are given the same community label))
-    g_cons = nx.Graph() 
+    g_cons = nx.Graph()
+    
+    # 0611
+    print('graph length')
+    print(len(g_cons.nodes()))
+    g_cons.add_nodes_from(consen_df['geoid_1'])
+    print(len(g_cons.nodes()))
+    g_cons.add_nodes_from(consen_df['geoid_2'])
+    print(len(g_cons.nodes()))
+    
+    consen_df = deepcopy(consen_df[consen_df['w']!=0])
+    
     g_cons.add_weighted_edges_from(consen_df[['geoid_1','geoid_2','w']].values, weight='w')
+    print(len(g_cons.nodes()))
 
     del consen_df, iters
 
@@ -696,6 +722,8 @@ def calc_community_modularity(community_df, tract_df):
     graph_combs = product(city_l, ['mob','fol_hh'])  
     # print([(k,v) for k,v in graph_combs])  
     for city, g_type in graph_combs:
+        print(city)
+        print(g_type)
         df = community_modularity(city, g_type, tract_df)
         com_mod_df = pd.concat([com_mod_df, df])
     community_df = pd.merge(community_df, com_mod_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) ## TODO ELLENORZES megnézni, hogy hány sora marad, ha nem left, hanem inner, jó-e ez a merge
