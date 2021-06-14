@@ -29,20 +29,16 @@ _ = octave.addpath('/home/ubuntu/GenLouvain/private/')
 
 ########### MINDEN ÖSSZEÖNTVE, LEHET VAN BENNE FELESLEGES - TODO ATNEZNI
 
-import pandas as pd
 import numpy as np
-import geopandas as gpd
 import seaborn as sns
-import networkx as nx
 
-import scipy
 import csv
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-import json
+
 import community as community_louvain
-from copy import deepcopy
+
 # from modularity_maximization.utils import get_modularity
 
 from itertools import product
@@ -68,6 +64,7 @@ follow_hh = pd.read_csv("../data/usageousers_city_follower_CT_HH_networks.rpt.gz
 follow_hh = follow_hh.rename(columns={"tract_home.1": "tract_home_1"})
 
 # 1.1.2.) DROP THE DUPLICATE TRACTS FROM THE CITY WHERE IT HAS THE LOWER DEGREE
+# There are same geoids that corresponds to several cities which is an error. We choose which city it should belong to based on degree.)
 
 # how many cities do geoids belong to in the mobility dataframe?
 temp = mobility\
@@ -120,19 +117,6 @@ fol_to_exclude = temp2\
 
 fol_to_exclude_l = list(zip(fol_to_exclude['cbsacode'], fol_to_exclude['value']))
 
-
-# TODO Eszter: kidobalni a mobility-bol es a follow_hh-bol ezt a 12 (cbsacode, geoid) parost **mindket oszlopbol**!!!!!! - BIA csak 3 ilyet találtam. Miért?
-# ugyanezeket a parosokat a tract_df-bol is kidobalni kesobb, akkor, amikor letrehozod eloszor a tract_df-et
-# kitorolheted a drop... fuggvenyedet
-# igy neznek ki az exclude-os valtozok
-"""
-<pre>   cbsacode               value
-1     39300  14000US25021443102
-3     40140  14000US06037402002
-5     41940  14000US06001441503
-</pre>
-"""
-
 # drop from mobility_df
 
 mobility['tuple_1'] = list(zip(mobility['cbsacode'], mobility['tract_home']))
@@ -146,7 +130,6 @@ mobility = mobility[-mobility['tuple_2'].isin(mob_to_exclude_l)]
 follow_hh['tuple_1'] = list(zip(follow_hh['cbsacode'], follow_hh['tract_home']))
 follow_hh['tuple_2'] = list(zip(follow_hh['cbsacode'], follow_hh['tract_home_1']))
 
-
 follow_hh = follow_hh[-follow_hh['tuple_1'].isin(fol_to_exclude_l)]
 follow_hh = follow_hh[-follow_hh['tuple_2'].isin(fol_to_exclude_l)]
 follow_hh = follow_hh[-follow_hh['tuple_1'].isin(mob_to_exclude_l)]
@@ -157,8 +140,6 @@ cbsacode = pd.read_csv("../data/cbsacode_shortname_tracts.csv",sep=";", index_co
 cbsacode['clean_name'] = cbsacode["short_name"].map(lambda s: s.split("/")[0].replace(' ','_').replace('.','').lower())
 
 # drop
-print('cbsacode drop')
-print(len(cbsacode))
 cbsacode['tuple'] = list(zip(cbsacode['cbsacode'], cbsacode['geoid']))
 cbsacode = cbsacode[-cbsacode['tuple'].isin(fol_to_exclude_l)]
 cbsacode = cbsacode[-cbsacode['tuple'].isin(mob_to_exclude_l)]
@@ -434,33 +415,17 @@ def consen(city, algorithm_type, g_type):
     consen_df['w'] = same_com.sum(axis=1)
     del same_com
 
-    #remove missing edges from edgelist (delete edges with 0 weight)
-    # consen_df = deepcopy(consen_df[consen_df['w']!=0])
-    # 0611 fentebbi sort kikommenteltem, talán ez volt a hiba oka. Feltételezésem: kidobja a nulla éleket, de mivel vannak olyan nodeok, amihez csak 0-s él vezet, ezért ezek a nodeok is kikerülnek, amikor edge-ek alapján csinálok consensus clusteringet
-    
-    
-    
-    ## -------------print("Getting number of zero differences...") # HIBA: KIDOB NODE-OT!!!---------------------KERDES: Miért dob ki nodeot? 0326 JAVITAS 0531: Ez csak azt jelenti, hogy semelyik futásban nem azonos a társaság címkéjük
-    
-
-    
     # graph for consensus clustering
     # ((create a graph from the consen_df edgelist (nodes (tracts) are same as in the original network, but the edge weights are the number of iterations when they are given the same community label))
     g_cons = nx.Graph()
-    
-    # 0611
-    print('graph length')
-    print(len(g_cons.nodes()))
     g_cons.add_nodes_from(consen_df['geoid_1'])
-    print(len(g_cons.nodes()))
-    g_cons.add_nodes_from(consen_df['geoid_2'])
-    print(len(g_cons.nodes()))
+    g_cons.add_nodes_from(consen_df['geoid_2']) # KERDESES - ez lehet, hogy mr felesleges
     
+    #remove missing edges from edgelist (delete edges with 0 weight)
     consen_df = deepcopy(consen_df[consen_df['w']!=0])
     
     g_cons.add_weighted_edges_from(consen_df[['geoid_1','geoid_2','w']].values, weight='w')
-    print(len(g_cons.nodes()))
-
+    
     del consen_df, iters
 
     # Louvain community detection 
@@ -514,19 +479,14 @@ def community_modularity(city, g_type, tract_df):
     
     
     mod_df = pd.DataFrame(columns=['city', 'algorithm_type', 'g_type', 'S', 'modularity_S'])
-# itt hianyzik vmi?? 0608
+
     for (modularity, algorithm_type) in [(Ms, 'ms'), (Mgn, 'mgn')]:
         S_notsorted = deepcopy(tract_df[\
             (tract_df['city'] == city) & \
             (tract_df['algorithm_type'] == algorithm_type) & \
             (tract_df['g_type'] == g_type)\
-        ].set_index('geoid')['S']) # KERDES Mikor kell deepcopy?
+        ].set_index('geoid')['S'])
         S = [S_notsorted.loc[k] for k in G.nodes() if k in S_notsorted] # KERDES: kell ez?
-    
-        print(S_notsorted)
-        print(S[0])
-        print(set(S))
-        print(list(set(S)))
 
         for s in list(set(S)):
             com_vector = (np.array(S) == s).astype('int')
@@ -676,9 +636,7 @@ def create_tract_df_with_degree():
 
     tract_df = pd.merge(tract_df, degree_df, how = 'left', on = ['g_type', 'geoid'])
     tract_df = pd.merge(tract_df, degreecent_df, how = 'left', on = ['g_type', 'geoid'])
-    
-    # TODO: idemasolni a droppolo reszt
-    
+       
     return tract_df
 
 # 3.6.) community_df
@@ -691,39 +649,15 @@ def create_community_df(tract_df):
 
 # 3.6.2.) COMMUNITY MODAULARITY - ellenőrizni kellene HIBAS KERDESES 0601
 
-# HIBAS AZ ADATBAZIS --> vannak benne duplikátumok
-## Innen látom, hogy vannak benne duplikátumok
-### algorithm_type = 'ms'
-### g_type = 'mob'
-### len(list(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid'])) - len(set(tract_df[(tract_df['algorithm_type'] == algorithm_type) & (tract_df['g_type'] == g_type)]['geoid']))
-
-"""
-# EZEKRE NEM FUT LE A community_modularity
---> drop_duplicate_tracts megoldja
-city_l.remove('providence')
-city_l.remove('san_jose')
-city_l.remove('austin')
-city_l.remove('san_francisco')
-city_l.remove('washington')
-city_l.remove('san_antonio')
-city_l.remove('riverside')
-city_l.remove('boston')
-city_l.remove('baltimore')
-city_l.remove('san_diego')
-city_l.remove('los_angeles')
-"""
-
 def calc_community_modularity(community_df, tract_df):
     """
     Calculate how much a community contributes to the overall network modularity and store it in community_df.
     """
     com_mod_df = pd.DataFrame()
- # 0608 IITT
+
     graph_combs = product(city_l, ['mob','fol_hh'])  
-    # print([(k,v) for k,v in graph_combs])  
+      
     for city, g_type in graph_combs:
-        print(city)
-        print(g_type)
         df = community_modularity(city, g_type, tract_df)
         com_mod_df = pd.concat([com_mod_df, df])
     community_df = pd.merge(community_df, com_mod_df, how = 'left', on = ['city', 'algorithm_type', 'g_type', 'S']) ## TODO ELLENORZES megnézni, hogy hány sora marad, ha nem left, hanem inner, jó-e ez a merge
@@ -985,6 +919,7 @@ def diff_from_network_avg(tract_df, network_df):
 
     # TODO 0608 EZ ITT HIANYOSNAK TUNIK!!!!!!!!!!!!!!!!!!!!!!!!!!!4
     return tract_df
+
 
 
 # df = pd.read_csv(....)
