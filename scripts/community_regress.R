@@ -7,7 +7,7 @@ library(data.table)
 library(plm)
 library(stargazer)
 
-setwd(dir = "home/barcsab/ANET/urban_communities/barcsab/scripts")
+#setwd(dir = "home/barcsab/ANET/urban_communities/barcsab/scripts")
 
 # import data
 reg_community_df <- fread("../data/community_level_data_2.csv.gz", sep=",")
