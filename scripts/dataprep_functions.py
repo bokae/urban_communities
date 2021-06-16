@@ -850,7 +850,7 @@ def create_poor_dummy(tract_df):
 
 # 4.4.) CALCULATE (PERCETAGE) DIFFERENCE OF TRACTS AND COMMUNITY AVERAGES FROM NETWORK AVERAGE
 
-def diff_from_network_avg(tract_df, network_df):
+def diff_from_network_avg(tract_df, community_df, network_df):
     """
 
     Calculate the percentage difference (or raw difference in case of income) of tracts and communities from network average.
@@ -909,16 +909,23 @@ def diff_from_network_avg(tract_df, network_df):
 
 
     community_avg_df = deepcopy(tract_df.groupby(['city','algorithm_type','g_type','S']))[
-        'educ_ba_p_diff_1', 'white_p_diff_1', 'black_p_diff_1', 'native_p_diff_1', 'asian_p_diff_1', 'income_diff_1'
+    'degree', 'population_1', 'educ_ba_1', 'income_1', 'white_1', 'black_1', 'native_1', 'asian_1', 
+    'educ_ba_p_diff_1', 'white_p_diff_1', 'black_p_diff_1', 'native_p_diff_1', 'asian_p_diff_1', 'income_diff_1'    
     ].mean().reset_index()
 
+    # kevesebb: 'educ_ba_p_diff_1', 'white_p_diff_1', 'black_p_diff_1', 'native_p_diff_1', 'asian_p_diff_1', 'income_diff_1'
+
     community_avg_df = community_avg_df.rename(columns = {
+        'degree' : 'degree_avg', 'population_1' : 'population_avg_1', 'educ_ba_1' : 'educ_ba_avg_1', 'income_1' : 'income_avg_1',
+        'white_1' : 'white_avg_1', 'black_1' : 'black_avg_1', 'native_1' : 'native_avg_1', 'asian_1' : 'asian_avg_1',
         'educ_ba_p_diff_1' : 'educ_ba_p_diff_avg_1', 'white_p_diff_1' : 'white_p_diff_avg_1', 'black_p_diff_1' : 'black_p_diff_avg_1',
-        'native_p_diff_1' : 'native_p_diff_avg_1', 'asian_p_diff_1' : 'asian_p_diff_avg_1', 'income_diff_1' : 'income_diff_avg_1'
+        'native_p_diff_1' : 'native_p_diff_avg_1', 'asian_p_diff_1' : 'asian_p_diff_avg_1', 'income_diff_1' : 'income_diff_avg_1'        
         })
+    # kevesebb
+    community_df = pd.merge(community_df, community_avg_df, on = ['city','algorithm_type','g_type','S'])
 
     # TODO 0608 EZ ITT HIANYOSNAK TUNIK!!!!!!!!!!!!!!!!!!!!!!!!!!!4
-    return tract_df
+    return tract_df, community_df
 
 
 
