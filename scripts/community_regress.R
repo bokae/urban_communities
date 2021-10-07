@@ -7,10 +7,14 @@ library(data.table)
 library(plm)
 library(stargazer)
 
-setwd("/home/barcsab/urban_communities/data")
+# setwd("/home/barcsab/urban_communities/data")
 
 # import data
 reg_community_df <- fread("../data/community_level_data_2.csv.gz", sep=",")
+
+
+# for Gergo
+reg_community_df <- select(reg_community_df, -income_1_l)
 
 # regressions
 
